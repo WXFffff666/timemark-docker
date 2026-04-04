@@ -16,7 +16,7 @@ export default function Channels() {
 
   const fetchConfig = async () => {
     try {
-      const data = await api.get('/config');
+      const data = await api.get('/settings/config');
       setConfig(data);
     } catch (error) {
       console.error('Failed to fetch config:', error);

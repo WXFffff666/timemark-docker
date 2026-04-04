@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Button } from '../components/ui/button';
@@ -26,12 +26,46 @@ export default function Settings() {
   const { toast } = useToast();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
+  const [usernameLoading, setUsernameLoading] = useState(false);
+  const [username, setUsername] = useState('');
 
   const [passwordForm, setPasswordForm] = useState({
     currentPassword: '',
     newPassword: '',
     confirmPassword: '',
   });
+
+
+  useEffect(() => {
+    const userRaw = localStorage.getItem('user');
+    if (userRaw) {
+      try {
+        const user = JSON.parse(userRaw);
+        if (user?.username) setUsername(user.username);
+      } catch {}
+    }
+  }, []);
+
+  const handleChangeUsername = async () => {
+    if (username.trim().length < 3) {
+      toast({ title: '用户名至少3个字符', variant: 'destructive' });
+      return;
+    }
+    setUsernameLoading(true);
+    try {
+      await api.post('/auth/change-username', { username: username.trim() });
+      const userRaw = localStorage.getItem('user');
+      if (userRaw) {
+        const user = JSON.parse(userRaw);
+        localStorage.setItem('user', JSON.stringify({ ...user, username: username.trim() }));
+      }
+      toast({ title: '用户名修改成功' });
+    } catch (error: any) {
+      toast({ title: '修改失败', description: error.message, variant: 'destructive' });
+    } finally {
+      setUsernameLoading(false);
+    }
+  };
 
   const handleChangePassword = async () => {
     if (passwordForm.newPassword.length < 8) {
@@ -84,6 +118,25 @@ export default function Settings() {
           animate="visible"
           className="space-y-6"
         >
+
+          <motion.div variants={itemVariants}>
+            <Card className="glass overflow-hidden">
+              <CardHeader className="border-b border-gray-200 dark:border-gray-700">
+                <CardTitle className="text-gray-900 dark:text-white">修改用户名</CardTitle>
+                <CardDescription className="text-gray-600 dark:text-gray-400">更新登录用户名（单用户模式）</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4 pt-6">
+                <div className="space-y-2">
+                  <Label htmlFor="username" className="text-sm font-medium">新用户名</Label>
+                  <Input id="username" value={username} onChange={(e) => setUsername(e.target.value)} className="h-11" />
+                </div>
+                <Button onClick={handleChangeUsername} disabled={usernameLoading} className="w-full h-11">
+                  {usernameLoading ? '修改中...' : '修改用户名'}
+                </Button>
+              </CardContent>
+            </Card>
+          </motion.div>
+
           <motion.div variants={itemVariants}>
             <Card className="glass overflow-hidden">
               <CardHeader className="border-b border-gray-200 dark:border-gray-700">
@@ -136,7 +189,6 @@ export default function Settings() {
               </CardContent>
             </Card>
           </motion.div>
-
           <motion.div variants={itemVariants}>
             <Card className="glass overflow-hidden">
               <CardHeader className="border-b border-gray-200 dark:border-gray-700">

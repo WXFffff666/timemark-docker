@@ -6,6 +6,7 @@ import { logger } from 'hono/logger';
 import 'dotenv/config';
 import authRoutes from './routes/auth.js';
 import eventRoutes from './routes/events.js';
+import settingsRoutes from './routes/settings.js';
 import { startScheduler, stopScheduler } from './queue/scheduler.js';
 import './queue/processors.js';
 
@@ -19,6 +20,7 @@ app.use('*', cors({
 
 app.route('/api/auth', authRoutes);
 app.route('/api/events', eventRoutes);
+app.route('/api/settings', settingsRoutes);
 
 app.get('/health', (c) => c.json({ status: 'ok' }));
 

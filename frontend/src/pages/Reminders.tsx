@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../co
 import { Switch } from '../components/ui/switch';
 import { useToast } from '../hooks/use-toast';
 import { api } from '../lib/api';
-import { ArrowLeft, Bell, Clock, Calendar } from 'lucide-react';
+import { ArrowLeft, Bell, Clock, Calendar, Globe } from 'lucide-react';
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -33,6 +33,7 @@ export default function Reminders() {
     dailyTime: '09:00',
     daysBeforeList: [1, 3, 7, 30],
     emailAddresses: ['1127251096@qq.com', 'wxf200707@gmail.com'],
+    timezone: 'Asia/Shanghai',
   });
 
   useEffect(() => {
@@ -137,6 +138,23 @@ export default function Reminders() {
                 />
               </motion.div>
               
+
+              <motion.div variants={itemVariants} className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Globe className="h-4 w-4 text-gray-500" />
+                  <Label htmlFor="timezone" className="text-sm font-medium">时区</Label>
+                </div>
+                <select
+                  id="timezone"
+                  value={config.timezone}
+                  onChange={(e) => setConfig({ ...config, timezone: e.target.value })}
+                  className="h-11 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                >
+                  <option value="Asia/Shanghai">东八区（北京时间）</option>
+                  <option value="UTC">UTC</option>
+                </select>
+              </motion.div>
+
               <motion.div variants={itemVariants} className="space-y-3">
                 <div className="flex items-center gap-2">
                   <Calendar className="h-4 w-4 text-gray-500" />
