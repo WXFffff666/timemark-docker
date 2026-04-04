@@ -27,11 +27,36 @@ export default function Settings() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
 
+  const [usernameForm, setUsernameForm] = useState({
+    newUsername: '',
+  });
+
   const [passwordForm, setPasswordForm] = useState({
     currentPassword: '',
     newPassword: '',
     confirmPassword: '',
   });
+
+
+  const handleChangeUsername = async () => {
+    if (usernameForm.newUsername.trim().length < 3) {
+      toast({ title: '用户名至少需要3个字符', variant: 'destructive' });
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await api.post('/auth/change-username', {
+        newUsername: usernameForm.newUsername.trim(),
+      });
+      toast({ title: '用户名修改成功，请重新登录后确认显示' });
+      setUsernameForm({ newUsername: '' });
+    } catch (error: any) {
+      toast({ title: '修改失败', description: error.message, variant: 'destructive' });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleChangePassword = async () => {
     if (passwordForm.newPassword.length < 8) {
@@ -84,6 +109,40 @@ export default function Settings() {
           animate="visible"
           className="space-y-6"
         >
+
+          <motion.div variants={itemVariants}>
+            <Card className="glass overflow-hidden">
+              <CardHeader className="border-b border-gray-200 dark:border-gray-700">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-900/20 flex items-center justify-center">
+                    <Shield className="h-5 w-5 text-blue-500" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-gray-900 dark:text-white">修改用户名</CardTitle>
+                    <CardDescription className="text-gray-600 dark:text-gray-400">单用户模式下可直接更新登录名</CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4 pt-6">
+                <div className="space-y-2">
+                  <Label htmlFor="newUsername" className="text-sm font-medium">新用户名</Label>
+                  <Input
+                    id="newUsername"
+                    type="text"
+                    value={usernameForm.newUsername}
+                    onChange={(e) => setUsernameForm({ newUsername: e.target.value })}
+                    placeholder="至少3个字符"
+                    className="h-11"
+                  />
+                </div>
+                <Button onClick={handleChangeUsername} disabled={loading} className="w-full h-11 mt-2">
+                  <Shield className="h-4 w-4 mr-2" />
+                  {loading ? '修改中...' : '修改用户名'}
+                </Button>
+              </CardContent>
+            </Card>
+          </motion.div>
+
           <motion.div variants={itemVariants}>
             <Card className="glass overflow-hidden">
               <CardHeader className="border-b border-gray-200 dark:border-gray-700">
