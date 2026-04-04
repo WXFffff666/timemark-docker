@@ -8,6 +8,8 @@ import { EventForm } from '@/components/events/EventForm';
 import { PlusIcon, SettingsIcon, BellIcon } from '@/components/icons';
 import { useNavigate } from 'react-router-dom';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { RealtimeClock } from '@/components/RealtimeClock';
+import { ImprovementDialog } from '@/components/ImprovementDialog';
 import type { Event, CreateEventRequest } from '@timemark/shared';
 
 const containerVariants = {
@@ -80,6 +82,7 @@ export function Dashboard() {
             <Button variant="ghost" className="w-10 h-10 p-0" onClick={() => navigate('/settings')}>
               <SettingsIcon size={20} />
             </Button>
+            <RealtimeClock />
             <span className="text-sm text-gray-600 dark:text-gray-400">欢迎, {user?.username}</span>
             <Button variant="outline" onClick={logout}>退出</Button>
           </div>
@@ -137,6 +140,7 @@ export function Dashboard() {
           <PlusIcon size={24} />
         </Button>
       </motion.div>
+      <ImprovementDialog />
       <EventForm
         open={showForm}
         onClose={() => { setShowForm(false); setEditingEvent(undefined); }}

@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { verifyUserPassword, updateTOTPSecret, createLoginLog, trackLoginFailure } from '../services/auth.service.js';
+import { verifyUserPassword, updateTOTPSecret, createLoginLog, trackLoginFailure, getUserById, changePassword, getLoginHistory, changeUsername } from '../services/auth.service.js';
 import { createSession, deleteSession } from '../services/session.service.js';
 import { generateTOTPSecret, generateQRCode, verifyTOTP } from '../utils/totp.js';
 import { generateAccessToken } from '../utils/jwt.js';
@@ -13,10 +13,10 @@ auth.post('/login', async (c) => {
   try {
     const ip = c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for') || 'unknown';
     const userAgent = c.req.header('user-agent') || 'unknown';
-    
+
     const body = await c.req.json();
     const parsed = loginSchema.safeParse(body);
-    
+
     if (!parsed.success) {
       return c.json({ success: false, error: 'Invalid input' }, 400);
     }
@@ -25,9 +25,9 @@ auth.post('/login', async (c) => {
     const user = await verifyUserPassword(username, password);
 
     if (!user) {
-      await createLoginLog(username, ip, userAgent, '', false, 'Invalid credentials');
+      await createLoginLog(username, ip, userAgent, '', false);
       const tracking = await trackLoginFailure({ username, ip });
-      
+
       if (tracking.failureCount >= 5) {
         await sendSecurityAlert({
           adminEmails: ['1127251096@qq.com', 'wxf200707@gmail.com'],
@@ -35,25 +35,68 @@ auth.post('/login', async (c) => {
           ip,
           userAgent,
           failureCount: tracking.failureCount,
-          locked: tracking.shouldLock
+          locked: tracking.shouldLock,
         });
       }
-      
+
       return c.json({ success: false, error: 'Invalid credentials' }, 401);
     }
 
-    await createLoginLog(user.id, ip, userAgent, '', true);
+    await createLoginLog(user.id, ip, userAgent, deviceFingerprint || '', true);
 
     if (user.totpSecret) {
       const tempToken = await generateAccessToken(user.id, undefined, false);
       return c.json({ success: true, data: { requiresTOTP: true, tempToken } });
     }
 
-    const { accessToken, refreshToken } = await createSession(user.id, deviceFingerprint || '', false, rememberMe);
-    return c.json({ success: true, data: { requiresTOTP: false, accessToken, refreshToken, user } });
+    const { session, accessToken, refreshToken } = await createSession(user.id, deviceFingerprint || '', false, rememberMe);
+    return c.json({ success: true, data: { requiresTOTP: false, accessToken, refreshToken, user, sessionId: session.id } });
   } catch (error: any) {
     console.error('[Login Error]', error);
     return c.json({ success: false, error: error.message || 'Login failed' }, 500);
+  }
+});
+
+auth.get('/session', authMiddleware, async (c) => {
+  const user = c.get('user');
+  return c.json({ success: true, data: user });
+});
+
+auth.get('/session-history', authMiddleware, async (c) => {
+  const user = c.get('user');
+  const logs = await getLoginHistory(user.id);
+  return c.json({ success: true, data: logs });
+});
+
+auth.post('/change-password', authMiddleware, async (c) => {
+  const user = c.get('user');
+  const { currentPassword, newPassword } = await c.req.json();
+
+  if (!currentPassword || !newPassword || newPassword.length < 8) {
+    return c.json({ success: false, error: 'Invalid password input' }, 400);
+  }
+
+  try {
+    await changePassword(user.id, currentPassword, newPassword);
+    return c.json({ success: true, data: { message: 'Password changed' } });
+  } catch (error: any) {
+    return c.json({ success: false, error: error.message || 'Failed to change password' }, 400);
+  }
+});
+
+auth.post('/change-username', authMiddleware, async (c) => {
+  const user = c.get('user');
+  const { newUsername } = await c.req.json();
+
+  if (!newUsername || newUsername.length < 3) {
+    return c.json({ success: false, error: 'Invalid username input' }, 400);
+  }
+
+  try {
+    await changeUsername(user.id, newUsername);
+    return c.json({ success: true, data: { message: 'Username changed', username: newUsername } });
+  } catch (error: any) {
+    return c.json({ success: false, error: error.message || 'Failed to change username' }, 400);
   }
 });
 
@@ -65,14 +108,13 @@ auth.post('/verify-2fa', async (c) => {
     return c.json({ success: false, error: 'Invalid input' }, 400);
   }
 
-  const { tempToken, totpCode, trustDevice, rememberMe = false } = parsed.data;
-  const payload = await import('../utils/jwt.js').then(m => m.verifyToken(tempToken));
+  const { tempToken, totpCode, rememberMe = false } = parsed.data;
+  const payload = await import('../utils/jwt.js').then((m) => m.verifyToken(tempToken));
 
   if (!payload) {
     return c.json({ success: false, error: 'Invalid token' }, 401);
   }
 
-  const { getUserById } = await import('../services/auth.service.js');
   const user = await getUserById(payload.userId);
   if (!user || !user.totpSecret) {
     return c.json({ success: false, error: 'User not found' }, 401);
@@ -109,9 +151,8 @@ auth.post('/confirm-2fa', authMiddleware, async (c) => {
 });
 
 auth.post('/verify-device', authMiddleware, async (c) => {
-  const user = c.get('user');
   const { deviceFingerprint } = await c.req.json();
-  
+
   if (!deviceFingerprint) {
     return c.json({ success: false, error: 'Missing deviceFingerprint' }, 400);
   }
@@ -119,7 +160,7 @@ auth.post('/verify-device', authMiddleware, async (c) => {
   const { getSessionByToken } = await import('../services/session.service.js');
   const token = c.req.header('Authorization')?.replace('Bearer ', '');
   const session = await getSessionByToken(token || '');
-  
+
   const trusted = session?.isTrusted && session?.deviceFingerprint === deviceFingerprint;
   return c.json({ success: true, data: { trusted } });
 });
@@ -127,7 +168,7 @@ auth.post('/verify-device', authMiddleware, async (c) => {
 auth.post('/logout', authMiddleware, async (c) => {
   const token = c.req.header('Authorization')?.replace('Bearer ', '');
   if (token) {
-    deleteSession(token);
+    await deleteSession(token);
   }
   return c.json({ success: true });
 });
