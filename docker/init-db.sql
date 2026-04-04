@@ -53,16 +53,19 @@ CREATE TABLE email_logs (
 );
 CREATE INDEX idx_email_logs_sent_at ON email_logs(sent_at);
 
--- login_logs 表
+-- login_logs 表（安全审计）
 CREATE TABLE login_logs (
   id SERIAL PRIMARY KEY,
   user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
-  ip VARCHAR(45),
+  username VARCHAR(255),
+  ip_address VARCHAR(45),
+  user_agent TEXT,
   device_fingerprint TEXT,
   success BOOLEAN NOT NULL,
-  timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  failure_reason TEXT,
+  login_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-CREATE INDEX idx_login_logs_timestamp ON login_logs(timestamp);
+CREATE INDEX idx_login_logs_login_time ON login_logs(login_time);
 
 -- login_attempts 表
 CREATE TABLE login_attempts (
@@ -87,5 +90,6 @@ CREATE TABLE user_configs (
   encrypted_dingtalk_secret TEXT,
   encrypted_telegram_bot_token TEXT,
   telegram_chat_id VARCHAR(255),
+  reminder_settings JSONB,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

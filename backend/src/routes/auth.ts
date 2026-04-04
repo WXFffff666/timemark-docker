@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { verifyUserPassword, updateTOTPSecret, createLoginLog, trackLoginFailure } from '../services/auth.service.js';
+import { verifyUserPassword, updateTOTPSecret, createLoginLog, trackLoginFailure, changePassword, updateUsername, getLoginHistory } from '../services/auth.service.js';
 import { createSession, deleteSession } from '../services/session.service.js';
 import { generateTOTPSecret, generateQRCode, verifyTOTP } from '../utils/totp.js';
 import { generateAccessToken } from '../utils/jwt.js';
@@ -122,6 +122,45 @@ auth.post('/verify-device', authMiddleware, async (c) => {
   
   const trusted = session?.isTrusted && session?.deviceFingerprint === deviceFingerprint;
   return c.json({ success: true, data: { trusted } });
+});
+
+
+auth.get('/session-history', authMiddleware, async (c) => {
+  const user = c.get('user');
+  const logs = await getLoginHistory(user.id);
+  return c.json({ success: true, data: logs });
+});
+
+auth.post('/change-password', authMiddleware, async (c) => {
+  const user = c.get('user');
+  const { currentPassword, newPassword } = await c.req.json();
+
+  if (!currentPassword || !newPassword || newPassword.length < 8) {
+    return c.json({ success: false, error: 'Invalid password input' }, 400);
+  }
+
+  const changed = await changePassword(user.id, currentPassword, newPassword);
+  if (!changed) {
+    return c.json({ success: false, error: 'Current password incorrect' }, 400);
+  }
+
+  return c.json({ success: true, data: { message: 'Password changed successfully' } });
+});
+
+auth.post('/change-username', authMiddleware, async (c) => {
+  const user = c.get('user');
+  const { username } = await c.req.json();
+
+  if (!username || username.length < 3) {
+    return c.json({ success: false, error: 'Invalid username' }, 400);
+  }
+
+  const changed = await updateUsername(user.id, username);
+  if (!changed) {
+    return c.json({ success: false, error: 'Username already exists' }, 400);
+  }
+
+  return c.json({ success: true, data: { message: 'Username updated' } });
 });
 
 auth.post('/logout', authMiddleware, async (c) => {
