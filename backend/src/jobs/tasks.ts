@@ -1,7 +1,16 @@
 import { query } from '../db/index.js';
 import { Lunar, Solar } from 'lunar-javascript';
+import {
+  buildReminderSendKey,
+  diffCalendarDays,
+  matchesReminderTimeWindow,
+  resolveNextGregorianOccurrence,
+} from '@timemark/shared/event-schedule';
 import { sendNotifications } from '../services/notifications/index.js';
+import { refreshUserEventCache } from '../services/event-cache.service.js';
 import { createLogger } from '../utils/logger.js';
+import { recordEventTrigger } from '../services/trigger-log.service.js';
+import { getSyncedNow, scheduleTimeSync, DEFAULT_SYNC_TIMEZONE } from '../utils/ntp.js';
 
 const log = createLogger('tasks');
 // Batch query replaces per-user getReminderSettings/getUserConfig calls
@@ -17,11 +26,61 @@ function getTodayString(now: Date, timeZone: string): string {
   return formatter.format(now); // en-CA outputs YYYY-MM-DD
 }
 
-/** Calculate days between two YYYY-MM-DD date strings (dateB - dateA) */
-function diffDays(dateA: string, dateB: string): number {
-  const a = new Date(dateA + 'T00:00:00Z');
-  const b = new Date(dateB + 'T00:00:00Z');
-  return Math.round((b.getTime() - a.getTime()) / (86400 * 1000));
+function parseJsonField<T>(raw: unknown): T | null {
+  if (!raw) return null;
+  try {
+    return (typeof raw === 'string' ? JSON.parse(raw) : raw) as T;
+  } catch {
+    return null;
+  }
+}
+
+/** Resolve next gregorian occurrence for an event (YYYY-MM-DD date field) */
+function resolveGregorianTarget(
+  today: string,
+  event: {
+    date: string;
+    type?: string;
+    recurring_config?: unknown;
+    next_occurrence?: string | null;
+  },
+  allDays: number[],
+): { targetDate: Date; daysUntil: number } | null {
+  const recurringConfig = parseJsonField<{ enabled?: boolean; frequency?: string }>(event.recurring_config);
+  const nextOccurrence = resolveNextGregorianOccurrence(event.date, today, {
+    eventType: event.type,
+    recurringConfig,
+    nextOccurrence: event.next_occurrence,
+  });
+  const diff = diffCalendarDays(today, nextOccurrence);
+  if (diff >= 0 && allDays.includes(diff)) {
+    return { targetDate: new Date(nextOccurrence + 'T00:00:00Z'), daysUntil: diff };
+  }
+  return null;
+}
+
+/** Resolve lunar date to next matching gregorian target within current/next lunar year */
+function resolveLunarTarget(today: string, lunarDateRaw: unknown, allDays: number[], now: Date): Date | null {
+  try {
+    const lunarData = typeof lunarDateRaw === 'string' ? JSON.parse(lunarDateRaw) : lunarDateRaw;
+    if (!lunarData?.month || !lunarData?.day) return null;
+
+    const month = lunarData.isLeap ? -lunarData.month : lunarData.month;
+    const currentYear = now.getFullYear();
+
+    for (const year of [currentYear, currentYear + 1]) {
+      const tryLunarDate = Lunar.fromYmd(year, month, lunarData.day);
+      const trySolar = tryLunarDate.getSolar();
+      const tryDateStr = `${trySolar.getYear()}-${String(trySolar.getMonth()).padStart(2, '0')}-${String(trySolar.getDay()).padStart(2, '0')}`;
+      const diff = diffCalendarDays(today, tryDateStr);
+      if (diff >= 0 && allDays.includes(diff)) {
+        return new Date(tryDateStr + 'T00:00:00Z');
+      }
+    }
+  } catch (error) {
+    throw error;
+  }
+  return null;
 }
 
 /** Parse reminder_days_before from an event's JSON field, returns null if invalid */
@@ -38,12 +97,10 @@ function parseReminderDays(raw: any): number[] | null {
 
 export async function sendReminders() {
   log.info('Checking reminders...');
-  
-  const now = new Date();
-  
-  // 查询所有事件
-  const allEvents = await query('SELECT * FROM events');
-  
+
+  scheduleTimeSync(DEFAULT_SYNC_TIMEZONE);
+  const now = getSyncedNow(DEFAULT_SYNC_TIMEZONE);
+
   // Batch load ALL user configs upfront to avoid N+1 queries
   const allUserConfigs = await query(
     `SELECT user_id, timezone, reminders_enabled, daily_check_time, days_before_list, reminder_emails 
@@ -67,6 +124,18 @@ export async function sendReminders() {
     userReminderSettingsCache.set(userId, Array.isArray(daysList) ? daysList : [1, 3, 7]);
   }
 
+  // Users with events but no user_configs row were previously skipped entirely by cron.
+  const eventOwnerRows = await query(`SELECT DISTINCT user_id FROM events`);
+  for (const row of eventOwnerRows.rows) {
+    const userId = row.user_id as number;
+    if (userConfigMap.has(userId)) continue;
+    const defaults = { timezone: 'Asia/Shanghai', reminders_enabled: true, days_before_list: [1, 3, 7] };
+    userConfigMap.set(userId, defaults);
+    userTimezoneCache.set(userId, defaults.timezone);
+    userEnabledCache.set(userId, true);
+    userReminderSettingsCache.set(userId, defaults.days_before_list);
+  }
+
   function getUserTimezone(userId: number): string {
     if (userTimezoneCache.has(userId)) return userTimezoneCache.get(userId)!;
     // User not in user_configs table - use defaults
@@ -84,11 +153,100 @@ export async function sendReminders() {
     }
     return [1, 3, 7];
   }
+
+  const enabledUserIds = [...userConfigMap.entries()]
+    .filter(([, cfg]) => cfg.reminders_enabled !== false)
+    .map(([id]) => id);
+
+  const eventIdSet = new Set<number>();
+  const allEventRows: any[] = [];
+
+  if (enabledUserIds.length > 0) {
+    const cacheRows = await query(
+      `SELECT user_id, payload FROM event_reminder_cache
+       WHERE user_id = ANY($1::int[]) AND expires_at > NOW()`,
+      [enabledUserIds],
+    );
+    const cachedUserIds = new Set<number>();
+    for (const row of cacheRows.rows) {
+      cachedUserIds.add(row.user_id as number);
+      const payload = row.payload;
+      if (!Array.isArray(payload)) continue;
+      for (const ev of payload) {
+        const id = (ev as { id?: number }).id;
+        if (id && !eventIdSet.has(id)) {
+          eventIdSet.add(id);
+          allEventRows.push(ev);
+        }
+      }
+    }
+
+    // 旧缓存可能只含 7 天窗口；补全年重复事件（生日等存历史年份）
+    if (cachedUserIds.size > 0) {
+      const supplemental = await query(
+        `SELECT * FROM events WHERE user_id = ANY($1::int[])
+         AND (
+           type IN ('birthday', 'anniversary')
+           OR (
+             recurring_config IS NOT NULL
+             AND recurring_config::jsonb->>'enabled' = 'true'
+             AND recurring_config::jsonb->>'frequency' = 'yearly'
+           )
+         )`,
+        [[...cachedUserIds]],
+      );
+      for (const ev of supplemental.rows) {
+        if (!eventIdSet.has(ev.id)) {
+          eventIdSet.add(ev.id);
+          allEventRows.push(ev);
+        }
+      }
+    }
+
+    const uncachedUserIds = enabledUserIds.filter((id) => !cachedUserIds.has(id));
+    if (uncachedUserIds.length > 0) {
+      const fallback = await query('SELECT * FROM events WHERE user_id = ANY($1::int[])', [uncachedUserIds]);
+      for (const ev of fallback.rows) {
+        if (!eventIdSet.has(ev.id)) {
+          eventIdSet.add(ev.id);
+          allEventRows.push(ev);
+        }
+      }
+      for (const userId of uncachedUserIds) {
+        refreshUserEventCache(userId).catch((e) => log.warn({ userId, err: e }, 'Cache refresh failed'));
+      }
+    }
+
+    const lunarRows = await query(
+      `SELECT * FROM events WHERE user_id = ANY($1::int[])
+       AND lunar_date IS NOT NULL
+       AND calendar_type IN ('lunar', 'both')`,
+      [enabledUserIds],
+    );
+    for (const ev of lunarRows.rows) {
+      if (!eventIdSet.has(ev.id)) {
+        eventIdSet.add(ev.id);
+        allEventRows.push(ev);
+      }
+    }
+  }
   
   // 筛选需要提醒的事件
-  const eventsToRemind: Array<{ id: number; user_id: number; name: string; date: string; lunar_date: any; calendar_type: string; notification_channels: string[]; notification_account_ids: any }> = [];
+  const eventsToRemind: Array<{
+    id: number;
+    user_id: number;
+    name: string;
+    date: string;
+    lunar_date: any;
+    calendar_type: string;
+    notification_channels: string[];
+    notification_account_ids: any;
+    targetDate?: Date;
+    daysUntil: number;
+    matchedReminderTime: string;
+  }> = [];
   
-  for (const event of allEvents.rows) {
+  for (const event of allEventRows) {
     // Check if user has reminders enabled (batch-loaded, default to true)
     if (!userEnabledCache.has(event.user_id)) {
       userEnabledCache.set(event.user_id, true); // Default: enabled
@@ -101,20 +259,19 @@ export async function sendReminders() {
 
     const calendarType = event.calendar_type;
     let eventTargetDate: Date | null = null;
+    let matchedDaysUntil: number | null = null;
     
     // 获取此事件的提前提醒天数列表
     // 优先从 reminder_config.daysBeforeList 读取，回退到 reminder_days_before
     let daysBeforeList: number[] = [];
-    try {
-      const rawConfig = event.reminder_config;
-      if (rawConfig) {
-        const config = typeof rawConfig === 'string' ? JSON.parse(rawConfig) : rawConfig;
-        if (config.daysBeforeList && Array.isArray(config.daysBeforeList) && config.daysBeforeList.length > 0) {
-          daysBeforeList = config.daysBeforeList;
-        }
-      }
-    } catch (e) {
-      log.error({ eventId: event.id, err: e }, 'Failed to parse reminder_config');
+    const reminderConfig = parseJsonField<{
+      enabled?: boolean;
+      daysBeforeList?: number[];
+      reminderTimes?: string[];
+    }>(event.reminder_config);
+    if (reminderConfig?.enabled === false) continue;
+    if (reminderConfig?.daysBeforeList && reminderConfig.daysBeforeList.length > 0) {
+      daysBeforeList = reminderConfig.daysBeforeList;
     }
     
     // 回退到 reminder_days_before 字段
@@ -125,44 +282,39 @@ export async function sendReminders() {
     // 包含 0 表示当天也提醒
     const allDays = daysBeforeList.includes(0) ? daysBeforeList : [0, ...daysBeforeList];
     
-    if (calendarType === 'gregorian') {
-      // 公历事件：计算今天距事件日期的天数差
-      const eventDate = event.date; // YYYY-MM-DD
-      const diff = diffDays(today, eventDate);
-      if (diff >= 0 && allDays.includes(diff)) {
-        eventTargetDate = new Date(eventDate + 'T00:00:00Z');
+    try {
+      if (calendarType === 'gregorian' || calendarType === 'both') {
+        const gTarget = resolveGregorianTarget(today, event, allDays);
+        if (gTarget) {
+          eventTargetDate = gTarget.targetDate;
+          matchedDaysUntil = gTarget.daysUntil;
+        }
       }
-    } else if (calendarType === 'lunar' && event.lunar_date) {
-      // 农历事件：转换为公历日期后比较
-      try {
-        const lunarData = typeof event.lunar_date === 'string' 
-          ? JSON.parse(event.lunar_date) 
-          : event.lunar_date;
-        
-        if (lunarData && lunarData.year && lunarData.month && lunarData.day) {
-          const month = lunarData.isLeap ? -lunarData.month : lunarData.month;
-          
-          // 计算今年和明年的农历日期对应的公历日期
-          const currentYear = now.getFullYear();
-          
-          for (const year of [currentYear, currentYear + 1]) {
-            const tryLunarDate = Lunar.fromYmd(year, month, lunarData.day);
-            const trySolar = tryLunarDate.getSolar();
-            const tryDate = new Date(Date.UTC(trySolar.getYear(), trySolar.getMonth() - 1, trySolar.getDay()));
-            const tryDateStr = tryDate.toISOString().split('T')[0];
-            
-            const diff = diffDays(today, tryDateStr);
-            if (diff >= 0 && allDays.includes(diff)) {
-              eventTargetDate = tryDate;
-              break;
-            }
+      if ((calendarType === 'lunar' || calendarType === 'both') && event.lunar_date) {
+        const lTarget = resolveLunarTarget(today, event.lunar_date, allDays, now);
+        if (lTarget) {
+          eventTargetDate = lTarget;
+          if (matchedDaysUntil === null) {
+            try {
+              const lunarData = typeof event.lunar_date === 'string' ? JSON.parse(event.lunar_date) : event.lunar_date;
+              const month = lunarData.isLeap ? -lunarData.month : lunarData.month;
+              for (const year of [now.getFullYear(), now.getFullYear() + 1]) {
+                const tryLunarDate = Lunar.fromYmd(year, month, lunarData.day);
+                const trySolar = tryLunarDate.getSolar();
+                const tryDateStr = `${trySolar.getYear()}-${String(trySolar.getMonth()).padStart(2, '0')}-${String(trySolar.getDay()).padStart(2, '0')}`;
+                const diff = diffCalendarDays(today, tryDateStr);
+                if (diff >= 0 && allDays.includes(diff)) {
+                  matchedDaysUntil = diff;
+                  break;
+                }
+              }
+            } catch { /* ignore */ }
           }
         }
-      } catch (error) {
-        log.error({ eventId: event.id, err: error }, 'Failed to parse lunar date');
-        // 记录农历转换失败到事件触发日志
-        await recordEventTrigger(event.id, event.user_id, 'scheduled', today, 'failed', `Lunar date conversion failed: ${String(error)}`);
       }
+    } catch (error) {
+      log.error({ eventId: event.id, err: error }, 'Failed to parse lunar date');
+      await recordEventTrigger(event.id, event.user_id, 'scheduled', today, 'failed', `Lunar date conversion failed: ${String(error)}`);
     }
     
     if (eventTargetDate) {
@@ -179,17 +331,9 @@ export async function sendReminders() {
       }).format(now);
       const currentTime = `${currentHour.padStart(2, '0')}:${currentMinute.padStart(2, '0')}`;
       
-      // Get reminder times from reminderConfig
-      let reminderTimes: string[] = [];
-      try {
-        const rawConfig = event.reminder_config;
-        if (rawConfig) {
-          const config = typeof rawConfig === 'string' ? JSON.parse(rawConfig) : rawConfig;
-          reminderTimes = config.reminderTimes || [];
-        }
-      } catch (e) {
-        log.error({ eventId: event.id, err: e }, 'Failed to parse reminder_config');
-      }
+      let reminderTimes = reminderConfig?.reminderTimes?.length
+        ? reminderConfig.reminderTimes
+        : [];
       
       // Fallback to legacy reminder_time field
       if (reminderTimes.length === 0) {
@@ -198,42 +342,74 @@ export async function sendReminders() {
       }
       
       // Debug logging
-      log.debug({ eventId: event.id, name: event.name, date: event.date, today, diff: diffDays(today, event.date), allDays, reminderTimes, currentTime }, 'Event check');
+      const nextOccurrence = resolveNextGregorianOccurrence(event.date, today, {
+        eventType: event.type,
+        recurringConfig: parseJsonField(event.recurring_config),
+        nextOccurrence: event.next_occurrence,
+      });
+      log.debug({
+        eventId: event.id,
+        name: event.name,
+        date: event.date,
+        nextOccurrence,
+        today,
+        diff: diffCalendarDays(today, nextOccurrence),
+        allDays,
+        reminderTimes,
+        currentTime,
+      }, 'Event check');
       
-      // Check if current time matches any reminder time (within 15-minute window)
-      const shouldRemind = reminderTimes.some(time => {
-        const [targetHour, targetMinute] = time.split(':').map(Number);
-        const targetTotalMinutes = targetHour * 60 + targetMinute;
-        const currentTotalMinutes = parseInt(currentHour) * 60 + parseInt(currentMinute);
-        const diff = Math.abs(currentTotalMinutes - targetTotalMinutes);
-        log.debug({ time, targetTotalMinutes, currentTotalMinutes, diff, match: diff < 15 }, 'Checking time');
-        return diff < 15;
+      let matchedReminderTime: string | null = null;
+      const shouldRemind = reminderTimes.some((time) => {
+        const match = matchesReminderTimeWindow(currentTime, time, 2);
+        if (match) matchedReminderTime = time;
+        return match;
       });
       
-      if (!shouldRemind) {
+      if (!shouldRemind || !matchedReminderTime) {
         continue; // Skip - not the right time for this event
       }
-      eventsToRemind.push({ ...event, targetDate: eventTargetDate });
+      eventsToRemind.push({
+        ...event,
+        targetDate: eventTargetDate,
+        daysUntil: matchedDaysUntil ?? 0,
+        matchedReminderTime,
+      });
     }
   }
   
   log.info({ count: eventsToRemind.length }, 'Events to remind');
-  
-  for (const event of eventsToRemind) {
+
+  for (const event of eventsToRemind.slice(0, 50)) {
     const rawChannels = event.notification_channels;
-    const channels = typeof rawChannels === 'string' ? JSON.parse(rawChannels) : (rawChannels || []);
+    const baseChannels = typeof rawChannels === 'string' ? JSON.parse(rawChannels) : (rawChannels || []);
+    const { resolveReminderChannels } = await import('../services/reminder-channel-resolver.service.js');
+    const channels = await resolveReminderChannels(event.user_id, baseChannels, event.daysUntil ?? 0);
     if (channels.length > 0) {
-      // Check if already sent today
       const timeZone = getUserTimezone(event.user_id);
       const today = getTodayString(now, timeZone);
+
+      const sendKey = buildReminderSendKey(today, event.daysUntil ?? 0, event.matchedReminderTime);
+
+      const claim = await query(
+        `INSERT INTO reminder_send_claims (event_id, trigger_date) VALUES ($1, $2)
+         ON CONFLICT DO NOTHING RETURNING event_id`,
+        [event.id, sendKey],
+      );
+      if (claim.rows.length === 0) {
+        log.debug({ eventId: event.id, sendKey }, 'Reminder already claimed by another worker');
+        continue;
+      }
+
       const alreadySent = await query(
         `SELECT id FROM event_trigger_logs 
          WHERE event_id = $1 AND trigger_date = $2 AND status = 'success'
          LIMIT 1`,
-        [event.id, today]
+        [event.id, sendKey],
       );
       if (alreadySent.rows.length > 0) {
-        log.debug({ eventId: event.id }, 'Already reminded today, skipping');
+        await query('DELETE FROM reminder_send_claims WHERE event_id = $1 AND trigger_date = $2', [event.id, sendKey]);
+        log.debug({ eventId: event.id, sendKey }, 'Already sent for this slot, skipping');
         continue;
       }
       try {
@@ -258,41 +434,16 @@ export async function sendReminders() {
         } : undefined;
         
         // 记录事件触发日志 - use timezone-aware today string for dedup consistency
-        await recordEventTrigger(event.id, event.user_id, 'scheduled', today, status, errorMessage, JSON.stringify(channelResults), errorDetails);
+        await recordEventTrigger(event.id, event.user_id, 'scheduled', sendKey, status, errorMessage, JSON.stringify(channelResults), errorDetails);
+        if (status === 'success') {
+          refreshUserEventCache(event.user_id).catch((e) => log.warn({ userId: event.user_id, err: e }, 'Post-send cache refresh failed'));
+        }
       } catch (error) {
         log.error({ eventId: event.id, err: error }, 'Failed to send notifications');
-        await recordEventTrigger(event.id, event.user_id, 'scheduled', today, 'failed', String(error));
+        await query('DELETE FROM reminder_send_claims WHERE event_id = $1 AND trigger_date = $2', [event.id, sendKey]);
+        await recordEventTrigger(event.id, event.user_id, 'scheduled', sendKey, 'failed', String(error));
       }
     }
-  }
-}
-
-// 记录事件触发日志
-async function recordEventTrigger(
-  eventId: number, 
-  userId: number, 
-  triggerType: string, 
-  triggerDate: string,
-  status: string = 'success',
-  errorMessage?: string,
-  channelResults?: string,
-  errorDetails?: { channel_type?: string; account_id?: number; details?: any }
-) {
-  try {
-    await query(
-      `INSERT INTO event_trigger_logs 
-       (event_id, user_id, trigger_type, trigger_date, status, error_message, channel_results, error_details, channel_type, account_id) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-      [
-        eventId, userId, triggerType, triggerDate, 
-        status, errorMessage || null, channelResults || null,
-        errorDetails?.details ? JSON.stringify(errorDetails.details) : null,
-        errorDetails?.channel_type || null,
-        errorDetails?.account_id || null
-      ]
-    );
-  } catch (error) {
-    log.error({ err: error }, 'Failed to record event trigger log');
   }
 }
 
@@ -310,18 +461,18 @@ export async function archiveLoginHistory() {
 
 export async function cleanupSessions() {
   log.info('Cleaning up expired sessions...');
-  const result = await query("DELETE FROM sessions WHERE expires_at < datetime('now')");
+  const result = await query("DELETE FROM sessions WHERE expires_at < NOW()");
   log.info({ count: result.rowCount ?? 0 }, 'Cleaned up expired sessions');
   
   // 清理30天前的登录日志
   const loginLogsResult = await query(
-    "DELETE FROM login_logs WHERE login_time < datetime('now', '-30 days')"
+    "DELETE FROM login_logs WHERE login_time < NOW() - INTERVAL '30 days'"
   );
   log.info({ count: loginLogsResult.rowCount ?? 0 }, 'Cleaned up old login logs');
   
   // 清理30天前的事件触发日志
   const triggerResult = await query(
-    "DELETE FROM event_trigger_logs WHERE created_at < datetime('now', '-30 days')"
+    "DELETE FROM event_trigger_logs WHERE created_at < NOW() - INTERVAL '30 days'"
   );
   log.info({ count: triggerResult.rowCount ?? 0 }, 'Cleaned up old event trigger logs');
 }

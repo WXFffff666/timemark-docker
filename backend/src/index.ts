@@ -21,21 +21,24 @@ import statsRoutes from './routes/stats.js';
 import backupRoutes from './routes/backup.js';
 import calendarRoutes from './routes/calendar.js';
 import pushRoutes from './routes/push.js';
+import todosRoutes from './routes/todos.js';
+import timeRoutes from './routes/time.js';
+import webauthnRoutes from './routes/webauthn.js';
 import { startScheduler, stopScheduler } from './queue/scheduler.js';
 
 const log = createLogger('bootstrap');
 
 async function bootstrap() {
 
-  // 0. 初始化密钥（首次启动自动生成，后续启动从文件读取）
+  // 0. 初始化密钥（首次启动自动生成，后续启动从文件读取�?
   log.info('Initializing secret keys...');
   const secrets = initSecretKeys();
   log.info('Secret keys ready');
 
-  // 1. 等待数据库就绪
+  // 1. 等待数据库就�?
   log.info('等待数据库初始化...');
   await waitForDb();
-  log.info('数据库就绪');
+  log.info('数据库就�?);
 
   // 2. 执行 schema 迁移
   await runMigrations();
@@ -55,11 +58,11 @@ async function bootstrap() {
       [username, passwordHash]
     );
 
-    console.log(`✅ 默认用户已创建 (用户名: ${username}, 密码: ${password})`);
-    console.log('⚠️  请登录后立即修改默认密码！');
+    console.log(`�?默认用户已创�?(用户�? ${username}, 密码: ${password})`);
+    console.log('⚠️  请登录后立即修改默认密码�?);
 
   } else {
-    log.info('数据库已初始化，已存在用户');
+    log.info('数据库已初始化，已存在用�?);
   }
 
   // 4. 创建 Hono 应用
@@ -91,6 +94,9 @@ async function bootstrap() {
   app.route('/api/backup', backupRoutes);
   app.route('/api/calendar', calendarRoutes);
   app.route('/api/push', pushRoutes);
+  app.route('/api/todos', todosRoutes);
+  app.route('/api/time', timeRoutes);
+  app.route('/api/auth/webauthn', webauthnRoutes);
 
   app.get('/health', (c) => c.json({ status: 'ok' }));
 

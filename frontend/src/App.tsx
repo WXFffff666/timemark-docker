@@ -11,6 +11,7 @@ import Templates from './pages/Templates';
 import Inbox from './pages/Inbox';
 import Contacts from './pages/Contacts';
 import Calendar from './pages/Calendar';
+import Todos from './pages/Todos';
 import { useEffect } from 'react';
 import { TimezoneProvider } from './components/RealtimeClock';
 
@@ -88,7 +89,7 @@ function AnimatedRoutes() {
 <Route path="/templates" element={<ProtectedRoute><Templates /></ProtectedRoute>} />
 <Route path="/inbox" element={<ProtectedRoute><Inbox /></ProtectedRoute>} />
 <Route path="/contacts" element={<ProtectedRoute><Contacts /></ProtectedRoute>} />
-<Route path="/calendar" element={<ProtectedRoute><Calendar /></ProtectedRoute>} />
+<Route path="/calendar" element={<ProtectedRoute><Calendar /></ProtectedRoute>} />`n<Route path="/todos" element={<ProtectedRoute><Todos /></ProtectedRoute>} />
 <Route path="/" element={<Navigate to="/dashboard" />} />
       </Routes>
     </AnimatePresence>

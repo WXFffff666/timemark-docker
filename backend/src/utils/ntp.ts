@@ -1,168 +1,224 @@
-import { query } from '../db/index.js';
-
 /**
- * NTP时间同步服务
- * 用于确保系统时间准确，在Docker容器意外重启后自动校准
+ * 网络时间校准：按 IANA 时区拉取权威时间，Cron 提醒与双历校验共用。
+ * 默认 Asia/Shanghai；用户切换时区后，后续校准跟随该时区。
  */
 
-// NTP服务器列表（公共NTP服务器）
-const NTP_SERVERS = [
-  'pool.ntp.org',
-  'time.windows.com',
-  'time.google.com',
-];
+export const DEFAULT_SYNC_TIMEZONE = 'Asia/Shanghai';
 
-// 允许的最大时间偏差（毫秒）- 5分钟
 const MAX_TIME_DRIFT = 5 * 60 * 1000;
+const SYNC_TTL_MS = 5 * 60 * 1000;
 
-interface TimeSyncResult {
+interface TimezoneCacheEntry {
+  offsetMs: number;
+  lastSyncAt: number;
+  result: TimeSyncResult;
+}
+
+const cacheByTimezone = new Map<string, TimezoneCacheEntry>();
+
+export interface TimeSyncResult {
   success: boolean;
+  timeZone: string;
   currentTime: Date;
   serverTime?: Date;
+  todayYmd?: string;
+  localTimeHHmm?: string;
   drift?: number;
   source: string;
   message: string;
 }
 
-/**
- * 获取当前系统时间戳（毫秒）
- */
-function getCurrentTimestamp(): number {
-  return Date.now();
+function normalizeTimeZone(timeZone?: string): string {
+  const tz = (timeZone || DEFAULT_SYNC_TIMEZONE).trim();
+  try {
+    Intl.DateTimeFormat(undefined, { timeZone: tz });
+    return tz;
+  } catch {
+    return DEFAULT_SYNC_TIMEZONE;
+  }
 }
 
-/**
- * 解析NTP响应并获取服务器时间
- * 这是一个简化的NTP客户端实现
- */
-async function queryNtpServer(hostname: string): Promise<number | null> {
+export function formatTodayYmd(now: Date, timeZone: string): string {
+  return getTodayYmd(now, timeZone);
+}
+
+export function formatLocalHHmm(now: Date, timeZone: string): string {
+  return getLocalHHmm(now, timeZone);
+}
+
+function getTodayYmd(now: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(now);
+}
+
+function getLocalHHmm(now: Date, timeZone: string): string {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(now);
+  const hour = parts.find((p) => p.type === 'hour')?.value || '00';
+  const minute = parts.find((p) => p.type === 'minute')?.value || '00';
+  return `${hour.padStart(2, '0')}:${minute.padStart(2, '0')}`;
+}
+
+async function fetchMillisFromWorldTimeApi(timeZone: string): Promise<number | null> {
   try {
-    // 使用DNS查询获取时间（简化实现）
-    // 实际生产环境建议使用专门的NTP库如 node-ntp-client
-    const response = await fetch(`https://worldtimeapi.org/api/ip`, {
-      signal: AbortSignal.timeout(5000)
-    });
-    
-    if (!response.ok) {
-      return null;
-    }
-    
-    const data = await response.json() as { datetime: string };
-    return new Date(data.datetime).getTime();
-  } catch (error) {
-    console.log(`[NTP] Failed to query ${hostname}:`, error);
+    const url = `https://worldtimeapi.org/api/timezone/${encodeURIComponent(timeZone)}`;
+    const response = await fetch(url, { signal: AbortSignal.timeout(2500) });
+    if (!response.ok) return null;
+    const data = await response.json() as { unixtime?: number; datetime?: string };
+    if (typeof data.unixtime === 'number') return data.unixtime * 1000;
+    if (data.datetime) return new Date(data.datetime).getTime();
+    return null;
+  } catch {
     return null;
   }
 }
 
-/**
- * 从WorldTimeAPI获取时间（备用方案）
- */
-async function getTimeFromWorldTimeAPI(): Promise<number | null> {
+async function fetchMillisFromTimeApiIo(timeZone: string): Promise<number | null> {
   try {
-    const response = await fetch('https://worldtimeapi.org/api/timezone/Asia/Shanghai', {
-      signal: AbortSignal.timeout(5000)
-    });
-    
-    if (!response.ok) {
-      return null;
-    }
-    
-    const data = await response.json() as { datetime: string };
-    return new Date(data.datetime).getTime();
-  } catch (error) {
-    console.log('[NTP] WorldTimeAPI failed:', error);
+    const url = `https://timeapi.io/api/Time/current/zone?timeZone=${encodeURIComponent(timeZone)}`;
+    const response = await fetch(url, { signal: AbortSignal.timeout(2500) });
+    if (!response.ok) return null;
+    const data = await response.json() as { dateTime?: string };
+    return data.dateTime ? new Date(data.dateTime).getTime() : null;
+  } catch {
     return null;
   }
 }
 
-/**
- * 获取时间戳（带网络校准）
- */
-export async function getSyncedTimestamp(): Promise<number> {
-  return getCurrentTimestamp();
+async function queryAuthoritativeTime(timeZone: string): Promise<{ ts: number; source: string } | null> {
+  const fetchers: Array<{ fn: () => Promise<number | null>; source: string }> = [
+    { fn: () => fetchMillisFromWorldTimeApi(timeZone), source: 'worldtimeapi.org' },
+    { fn: () => fetchMillisFromTimeApiIo(timeZone), source: 'timeapi.io' },
+  ];
+
+  const samples: Array<{ ts: number; source: string }> = [];
+  await Promise.all(
+    fetchers.map(async ({ fn, source }) => {
+      const ts = await fn();
+      if (ts) samples.push({ ts, source });
+    }),
+  );
+
+  if (samples.length === 0) return null;
+  samples.sort((a, b) => a.ts - b.ts);
+  return samples[Math.floor(samples.length / 2)];
 }
 
-/**
- * 同步系统时间
- * 在系统启动时调用，确保时间准确
- */
-export async function syncTime(): Promise<TimeSyncResult> {
+function getCache(timeZone: string): TimezoneCacheEntry | null {
+  const entry = cacheByTimezone.get(timeZone);
+  if (!entry) return null;
+  if (Date.now() - entry.lastSyncAt > SYNC_TTL_MS) return null;
+  return entry;
+}
+
+export function getClockOffsetMs(timeZone?: string): number {
+  const tz = normalizeTimeZone(timeZone);
+  return getCache(tz)?.offsetMs ?? cacheByTimezone.get(tz)?.offsetMs ?? 0;
+}
+
+export function getSyncedNow(timeZone?: string): Date {
+  const offset = getClockOffsetMs(timeZone);
+  return new Date(Date.now() + offset);
+}
+
+export function getLastTimeSyncResult(timeZone?: string): TimeSyncResult | null {
+  const tz = normalizeTimeZone(timeZone);
+  return getCache(tz)?.result ?? cacheByTimezone.get(tz)?.result ?? null;
+}
+
+/** 后台刷新，不阻塞请求 */
+export function scheduleTimeSync(timeZone?: string): void {
+  void syncTime(timeZone).catch(() => {});
+}
+
+export async function syncTime(timeZone?: string, options?: { force?: boolean }): Promise<TimeSyncResult> {
+  const tz = normalizeTimeZone(timeZone);
+  if (!options?.force) {
+    const cached = getCache(tz);
+    if (cached) return cached.result;
+  }
+
   const currentTime = new Date();
-  const currentTimestamp = getCurrentTimestamp();
-  
-  // 尝试从多个NTP源获取时间
-  let serverTimestamp: number | null = null;
-  let source = 'system';
-  
-  // 优先使用WorldTimeAPI（最可靠）
-  serverTimestamp = await getTimeFromWorldTimeAPI();
-  
-  if (serverTimestamp) {
-    source = 'worldtimeapi.org';
-  } else {
-    // 尝试NTP服务器
-    for (const server of NTP_SERVERS) {
-      const ts = await queryNtpServer(server);
-      if (ts) {
-        serverTimestamp = ts;
-        source = server;
-        break;
-      }
-    }
-  }
-  
-  // 如果无法获取服务器时间，使用系统时间
-  if (!serverTimestamp) {
-    return {
+  const currentTimestamp = Date.now();
+  const authoritative = await queryAuthoritativeTime(tz);
+
+  if (!authoritative) {
+    const synced = new Date(currentTimestamp + getClockOffsetMs(tz));
+    const result: TimeSyncResult = {
       success: true,
+      timeZone: tz,
       currentTime,
+      serverTime: synced,
+      todayYmd: getTodayYmd(synced, tz),
+      localTimeHHmm: getLocalHHmm(synced, tz),
       source: 'system',
-      message: 'Using system time (NTP sync failed)'
+      message: 'Using cached/system time (network time sources unavailable)',
     };
+    const entry = cacheByTimezone.get(tz);
+    if (entry) {
+      entry.lastSyncAt = Date.now();
+      entry.result = result;
+    } else {
+      cacheByTimezone.set(tz, { offsetMs: 0, lastSyncAt: Date.now(), result });
+    }
+    return result;
   }
-  
-  // 计算时间偏差
-  const drift = Math.abs(serverTimestamp - currentTimestamp);
-  
-  // 如果时间偏差超过阈值，记录警告
-  if (drift > MAX_TIME_DRIFT) {
-    console.warn(`[NTP] Time drift detected: ${drift}ms (${drift / 1000}s)`);
-  }
-  
-  return {
+
+  const drift = authoritative.ts - currentTimestamp;
+  const synced = new Date(authoritative.ts);
+  const result: TimeSyncResult = {
     success: true,
+    timeZone: tz,
     currentTime,
-    serverTime: new Date(serverTimestamp),
-    drift,
-    source,
-    message: drift > MAX_TIME_DRIFT 
-      ? `Warning: Time drift of ${Math.round(drift / 1000)}s detected`
-      : 'Time synchronized successfully'
+    serverTime: synced,
+    todayYmd: getTodayYmd(synced, tz),
+    localTimeHHmm: getLocalHHmm(synced, tz),
+    drift: Math.abs(drift),
+    source: authoritative.source,
+    message: Math.abs(drift) > MAX_TIME_DRIFT
+      ? `Warning: Time drift of ${Math.round(Math.abs(drift) / 1000)}s detected`
+      : 'Time synchronized successfully',
   };
-}
 
-/**
- * 检查并记录时间同步状态
- * 可以在定时任务中调用
- */
-export async function checkTimeSync(): Promise<void> {
-  const result = await syncTime();
-  console.log(`[NTP] Time sync result:`, result.message);
-  
-  // 如果有显著时间偏差，可以触发告警
-  if (result.drift && result.drift > MAX_TIME_DRIFT) {
-    console.error(`[NTP] Significant time drift: ${result.drift}ms from ${result.source}`);
+  if (Math.abs(drift) > MAX_TIME_DRIFT) {
+    console.warn(`[NTP] Time drift ${drift}ms (${tz}) from ${authoritative.source}`);
   }
+
+  cacheByTimezone.set(tz, { offsetMs: drift, lastSyncAt: Date.now(), result });
+  return result;
 }
 
-/**
- * 定时时间同步（每小时执行）
- */
-export async function scheduledTimeSync(): Promise<void> {
+export async function getSyncedTimestamp(timeZone?: string): Promise<number> {
+  const tz = normalizeTimeZone(timeZone);
+  if (!getCache(tz)) {
+    await syncTime(tz).catch(() => {});
+  }
+  return getSyncedNow(tz).getTime();
+}
+
+export async function checkTimeSync(timeZone?: string): Promise<void> {
+  const result = await syncTime(timeZone, { force: true });
+  console.log(`[NTP] ${result.timeZone}: ${result.message}`);
+}
+
+export async function scheduledTimeSync(timeZone?: string): Promise<void> {
   try {
-    await checkTimeSync();
+    await checkTimeSync(timeZone);
   } catch (error) {
     console.error('[NTP] Scheduled sync failed:', error);
   }
+}
+
+export async function logTimeDriftIfNeeded(timeZone?: string): Promise<void> {
+  const result = getLastTimeSyncResult(timeZone) ?? await syncTime(timeZone);
+  if (!result.drift || result.drift <= MAX_TIME_DRIFT) return;
+  console.warn(`[NTP] Significant drift ${result.drift}ms (${result.timeZone}) from ${result.source}`);
 }

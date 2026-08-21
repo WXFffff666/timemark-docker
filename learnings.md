@@ -1,4 +1,4 @@
-# Learnings
+﻿# Learnings
 
 ## 2026-08-22 - 粗略移植 v23 Inbox/Webhook/Calendar/Contacts (Tasks 17-21)
 
@@ -12,3 +12,10 @@
 - 前端 `App.tsx` 追加 `/inbox` `/contacts` `/calendar` 路由（ProtectedRoute），组件按 lazy/直接引入均可，当前直接引入简化。
 - 后端 `db/index.ts` 已有 `convertPgParamsToSqlite`，故 vercel 的 `$1` 占位符 SQL 无需改写。
 - 策略：粗略移植直接提交，依赖 workflow 验证，有问题后续再调；Do NOT 本地 build/测试。
+
+
+## 2026-08-22 粗略移植 Todos 22-29 (vercel -> docker)
+
+- 批量复制同路径：backend todo.service(365d purge)/routes todos/time/webauthn/auth + utils ntp/turnstile/webauthn-config/retry-classifier/lunar-converter + jobs/tasks(croner+retry指数) + shared lunar-calendar/event-schedule + frontend Todos/Calendar + lib calendar-utils/lunar/time-sync/timezone-utils/webauthn + hooks useTodoCompletions + stores timezone + docs TURNSTILE_SETUP
+- 补齐：App.tsx 新增 /todos 路由、backend/index.ts 挂载 todos/time/webauthn、shared/index.ts 补 lunar-calendar 导出、backend/frontend package.json 追加 @simplewebauthn/server/browser
+- 策略：粗略移植直接提交，不跑本地 build，由 workflow 验证

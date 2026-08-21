@@ -19,4 +19,6 @@ export * from './smtp-transport.js';
 export * from './email-compose.js';
 export * from './event-schedule.js';
 export * from './sanitize-html.js';
+export * from './lunar-calendar.js';
+export * from './event-schedule.js';
 export * from './utils/zod-errors.js';
