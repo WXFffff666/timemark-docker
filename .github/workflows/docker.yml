@@ -4,6 +4,8 @@ on:
   push:
     branches: [master]
     tags: ['v*']
+  pull_request:
+    branches: [master]
   workflow_dispatch:
 
 jobs:
@@ -32,11 +34,11 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'pnpm'
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --config.blockExoticSubdeps=false
 
       - name: Build project
         run: pnpm build
@@ -57,30 +59,28 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and push to GHCR
-        uses: docker/build-push-action@v6
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
         with:
-          context: .
-          push: true
+          images: |
+            xfffff666/timemark
+            ghcr.io/WXFffff666/timemark
           tags: |
-            ghcr.io/${{ steps.owner.outputs.owner }}/timemark:latest
-            ghcr.io/${{ steps.owner.outputs.owner }}/timemark:v${{ github.run_number }}
-          load: false
-          labels: |
-            org.opencontainers.image.title=TimeMark
-            org.opencontainers.image.description=智能事件提醒系统
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha
 
-      - name: Build and push to Docker Hub
+      - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: .
-          push: true
-          tags: |
-            xfffff666/timemark:latest
-            xfffff666/timemark:v${{ github.run_number }}
-          load: false
+          platforms: linux/amd64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
