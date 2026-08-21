@@ -8,6 +8,9 @@ import Reminders from './pages/Reminders';
 import LoginHistory from './pages/LoginHistory';
 import Channels from './pages/Channels';
 import Templates from './pages/Templates';
+import Inbox from './pages/Inbox';
+import Contacts from './pages/Contacts';
+import Calendar from './pages/Calendar';
 import { useEffect } from 'react';
 import { TimezoneProvider } from './components/RealtimeClock';
 
@@ -83,6 +86,9 @@ function AnimatedRoutes() {
         <Route path="/login-history" element={<ProtectedRoute><LoginHistory /></ProtectedRoute>} />
 <Route path="/channels" element={<ProtectedRoute><Channels /></ProtectedRoute>} />
 <Route path="/templates" element={<ProtectedRoute><Templates /></ProtectedRoute>} />
+<Route path="/inbox" element={<ProtectedRoute><Inbox /></ProtectedRoute>} />
+<Route path="/contacts" element={<ProtectedRoute><Contacts /></ProtectedRoute>} />
+<Route path="/calendar" element={<ProtectedRoute><Calendar /></ProtectedRoute>} />
 <Route path="/" element={<Navigate to="/dashboard" />} />
       </Routes>
     </AnimatePresence>
