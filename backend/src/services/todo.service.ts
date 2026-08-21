@@ -12,7 +12,7 @@ export function todoOccurrenceDate(eventDate: string): string {
 
 export async function listTodoCompletions(userId: number): Promise<TodoCompletionRow[]> {
   const result = await query(
-    `SELECT event_id, occurrence_date::text AS occurrence_date, completed_at
+    `SELECT event_id, occurrence_date, completed_at
      FROM todo_completions
      WHERE user_id = $1
      ORDER BY completed_at DESC`,
@@ -28,7 +28,7 @@ export async function markTodoComplete(
 ): Promise<void> {
   await query(
     `INSERT INTO todo_completions (user_id, event_id, occurrence_date)
-     VALUES ($1, $2, $3::date)
+     VALUES ($1, $2, $3)
      ON CONFLICT (user_id, event_id, occurrence_date) DO UPDATE SET completed_at = CURRENT_TIMESTAMP`,
     [userId, eventId, occurrenceDate],
   );
@@ -41,7 +41,7 @@ export async function unmarkTodoComplete(
 ): Promise<boolean> {
   const result = await query(
     `DELETE FROM todo_completions
-     WHERE user_id = $1 AND event_id = $2 AND occurrence_date = $3::date
+     WHERE user_id = $1 AND event_id = $2 AND occurrence_date = $3
      RETURNING id`,
     [userId, eventId, occurrenceDate],
   );
@@ -52,7 +52,7 @@ export async function unmarkTodoComplete(
 export async function purgeOldTodoCompletions(retentionDays = 365): Promise<number> {
   const result = await query(
     `DELETE FROM todo_completions
-     WHERE occurrence_date < CURRENT_DATE - ($1::int * INTERVAL '1 day')`,
+     WHERE occurrence_date < date('now', '-' || $1 || ' days')`,
     [retentionDays],
   );
   return result.rowCount ?? 0;

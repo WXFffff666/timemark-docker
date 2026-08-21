@@ -1,5 +1,190 @@
 # Changelog
 
+## v2.16.0 (2026-07-31)
+
+### 双历与农历
+
+- **事件表单**：公历/农历/双历模式正确同步 `lunarDate`；纯农历使用农历文本输入；保存时往返校验
+- **倒计时与待办**：前端 `resolveNextOccurrenceDate` 支持农历/双历，与 Cron 提醒逻辑对齐
+- **日历页**：事件标签显示「公历 / 农历 / 双历」
+- **自检**：`runLunarCalendarSelfTest` 公历→农历→公历往返校验（`shared/lunar-calendar`）
+
+### 时区与 NTP 时间校准
+
+- **默认时区**：`Asia/Shanghai`（北京时间）；首页快捷切换与设置页全局联动
+- **NTP 校准**：Cron 提醒、`/api/time/status` 使用 WorldTimeAPI / timeapi.io 校正时钟漂移
+- **按用户时区**：切换时区后 NTP 与「今天」计算跟随该 IANA 时区
+- **首页时钟**：接入 NTP 偏移后的校正时间
+- **健康检查**：`/api/health` 不再阻塞等待 NTP；Cron 详情仅 `detailed=1` + token 可见
+
+### 登录性能
+
+- Turnstile、IP 封禁、账户锁定 **并行检查**
+- 登录查询 **合并为一次**（密码 + TOTP + IP 白名单 + 改密状态）
+- 无失败记录时跳过 `countPasswordFailuresSinceLastSuccess`
+- 成功路径：先返回 Session，审计日志 **后台异步**
+- `/api/auth/login` 不再重复走全局 `apiRateLimit`
+- Turnstile **preconnect** 预连接 Cloudflare
+
+### 安全加固
+
+- **零信任**：移除未验证的 `X-API-Key` bypass
+- **Passkey 登录**：与密码登录一致，强制 Turnstile 人机验证
+- **外部日历 SSRF**：拉取 ICS 前 `isSafePublicUrl()` 校验
+- **Resend Webhook**：生产环境一律要求有效签名
+- **Google OAuth**：回调重定向限制在白名单域名（`CORS_ORIGIN` / canonical）
+- **API Key**：移除 `api_key` 明文回退，仅 `api_key_hash`
+
+### 单用户模式
+
+- 固定个人单账户，禁止创建第二用户
+- 会话令牌后台自动续期；安全中心移除需手动改 Vercel env 的 MASTER_KEY 轮换 UI
+
+### 提醒修复
+
+- Cron 纳入无 `user_configs` 但有事件的用户；登录/bootstrap 自动补配置
+- 修复 `nextOccurrence.slice is not a function`（pg DATE 兼容）
+- 提醒时刻 ±2 分钟窗口抽取为 `matchesReminderTimeWindow` 共享函数
+
+### 文档
+
+- 更新 README、CHANGELOG、SECURITY_AUDIT、OPTIMIZATION_PLAN、TURNSTILE_SETUP、INTEGRATIONS、NOTIFICATIONS
+
+## v2.15.0 (2026-07-17)
+
+### 固定联系人
+
+- **多联系方式**：每个联系人支持多个邮箱、手机、Telegram / QQ / WxPusher，带标签（如「工作」「妈妈」）
+- 数据模型：`fixed_contacts.contact_methods` JSONB（迁移 **v30**），旧单字段自动迁入
+- **快捷发信**：仅 1 个邮箱直接进入编辑；多个邮箱先进入二级界面手动勾选（默认不全选）
+- **批量邮件 / 事件提醒**：选中联系人时自动合并其全部邮箱
+- API：`POST/PUT /api/contacts` 支持 `emails`/`phones` 等数组；`recipientEmails` 可指定子集
+
+### 近期待办
+
+- **打勾完成**：`/todos` 与首页待办同步服务端 `todo_completions`（迁移 **v29**）
+- **自动移出**：事件过期或离开提醒窗口后从当前列表隐藏
+- **完成历史**：「完成历史」标签页查看已归档记录
+- **定期清理**：`daily-maintenance` 删除 `occurrence_date` 超过 365 天的完成记录
+
+### 日历
+
+- 年 / 月 / 日视图切换；日期格子可点击；默认展示本月事件列表
+
+### 安全加固
+
+- **发信白名单**：`POST /api/contacts/:id/send-email` 的 `recipientEmails` 必须属于该联系人，修复开放邮件中继风险
+- **API 密钥脱敏**：`GET/PUT/POST /api/config/accounts` 响应不返回明文 `token`/`secret`，以 `tokenConfigured` 等标志代替
+- **HSTS**：应用层与 `vercel.json` 增加 `Strict-Transport-Security`
+- **SMTP TLS**：587 端口 `requireTLS: true`
+- **CORS**：禁止 `CORS_ORIGIN=*` 与 credentials 组合
+- 快捷发信写入 `email_logs` 时附带 `user_id`
+
+### 文档
+
+- 更新 README、SECURITY_AUDIT、NOTIFICATIONS、OPTIONAL_FEATURES、OPTIMIZATION_PLAN
+- 部署自检期望 schema 版本 **v30**
+
+## v2.14.3 (2026-07-15)
+
+### 修复
+- **登录 Turnstile**：修复 `execute` 模式下验证回调使用陈旧闭包，导致用空用户名/密码提交并显示 `Invalid input`
+- 改为页面加载时显示可见 Turnstile 组件；验证完成后可自动登录
+- **Turnstile 显示**：去除卡片 `overflow-hidden` 与 motion 透明动画包裹；增加 `.turnstile-host` 底色边框；`appearance: always`；回调 ref 可靠挂载
+
+## v2.14.2 (2026-07-15)
+
+### 体验与文档
+- **深浅色切换**：View Transitions API 圆形扩散动画（从点击位置向外过渡；尊重 `prefers-reduced-motion`）
+- **深色模式对比度**：调高 muted 文字、边框与玻璃面板可读性
+- 新增 [docs/OPTIONAL_FEATURES.md](docs/OPTIONAL_FEATURES.md)：平台 env、通知渠道、集成、Cron 均可选说明
+- 通知渠道页与文档强调「按需绑定，不配置不影响核心功能」
+
+## v2.14.1 (2026-07-15)
+
+### 文档与可选集成
+- 新增 [docs/GOOGLE_CALENDAR_OAUTH.md](docs/GOOGLE_CALENDAR_OAUTH.md)：Google OAuth 可选配置、Vercel 环境变量、Google Cloud 重定向 URI、schema v27
+- 更新 VERCEL_DEPLOYMENT、FREE_TIER_DEPLOY、INTEGRATIONS、README：schema 期望版本 v27；Google OAuth 标明为可选
+- 设置页：未配置 OAuth 时显示中性提示（不影响其他功能），链至集成文档
+- 部署自检 `EXPECTED_SCHEMA_VERSION` 更新为 27
+
+## v2.14.0 (2026-07-15)
+
+### Phase 0 — 收件箱
+- 完成 inbox 全链路：迁移 v23、路由、CSRF 豁免、通知成功写入收件箱、30 天清理、前端 Inbox 页与未读角标
+
+### Phase 1 — 优化项 B1–B40
+- 数据库连接池、pooler 检测、防重提醒、事件缓存增量刷新、prefetch、ICS ETag、批量 LIMIT 50、邮件合并、Turnstile、Webhook 幂等/限流、MASTER_KEY 轮换 API、CSP report-uri、Cron 监控、健康检查队列深度、stats_daily 聚合、测试与 i18n/PWA 等
+
+### Phase 2 — 功能 C1–C40（排除 AI/多租户/分享/热力图/市场）
+- CalDAV 同步、VALARM、多 feed token、条件规则、联系人分组、集成文档、出站 webhook、年报渠道成功率、Passkey 登录、加密备份、Cron 前端页、嵌入倒计时等
+
+### Phase 3 — Serverless 适用性
+- `serverless-suitability.ts` + `/api/features/serverless-check` 文档化需外部 cron 的功能
+
+### 安全
+- 安全审查修复：Webhook 载荷限制、HMAC 验证、审计日志、幂等键
+
+## v2.13.0 (2026-07-15)
+
+### 通知系统修复与完善
+
+- **渠道测试 Validation failed**：`testConnectionSchema` 支持仅传 `accountId`；统一收件人回退逻辑
+- **渠道状态显示**：不再对所有启用渠道假显示「已连接」；按已验证/未测试/失败/禁用分组
+- **Resend 渠道**：恢复「收件人邮箱」字段；编辑表单通用回填；测试失败返回 HTTP 400 与明确错误信息
+- **设置页**：「通知默认邮箱」可保存与清空；近 30 天「邮件记录」
+- **测试发送**：`test-send` 写入 `event_trigger_logs`；渠道测试传递 `accountId` 并持久化 `last_test_result`
+- **失败重试**：`notification_queue` 指数退避（5m→30m→2h→6h）；Cron `/api/cron/retry-notifications`
+
+### 集成功能（Migration v22）
+
+- **入站 Webhook**：`POST /api/webhook/receive/:token` 创建事件，可选 HMAC 签名
+- **日历 ICS Feed**：`GET /api/calendar/feed/:token.ics` 供 Google/Outlook 订阅
+- **外部 ICS 同步**：设置页配置 URL + Cron `/api/cron/calendar-sync`
+- **冲突提示**：通知正文追加同日其他日程提示
+- **事件缓存**：`event_reminder_cache` 表（PostgreSQL，非 Redis）
+- **年度报告**：月度热力图与 `year` 查询参数
+
+### 部署与自检
+
+- **部署向导**：中文系统自检、数据库结构版本（v22）、区分平台 env 与渠道 API Key
+- **Turnstile**：兼容 Vercel 中 `SecretKey` / `SiteKey` 命名
+- **登录限流**：仅 `POST /login` 限流，避免全 `/api/auth/*` 误触 429
+
+### 文档
+
+- 新增 [docs/NOTIFICATIONS.md](docs/NOTIFICATIONS.md)、[docs/INTEGRATIONS.md](docs/INTEGRATIONS.md)
+- 更新 README、VERCEL_DEPLOYMENT、FREE_TIER_DEPLOY 中的 Cron 与 Resend 说明
+
+## v2.12.0 (2026-07-15)
+
+- **安全加固**：CSP 收紧、日志脱敏、导出脱敏、生产禁弱密钥回退、删除 Docker 遗留、环境变量仅 Production 文档（合并自 vercel v2.12.0）
+
+## v2.11.0 (2026-07-15)
+
+- **登录与部署保护**：密码登录默认、Turnstile、health 端点加固、Vercel 部署保护（合并自 vercel v2.11.0）
+
+## v2.7.0 (2026-07-15)
+
+### 云端通知渠道精简
+
+- **移除不可用渠道**：微信个人号、WhatsApp、QQ Bot、Signal、iMessage、Zalo、Clawbot、Nostr 从前端 UI、API 路由和发送逻辑中完全移除
+- **仅保留 HTTP 渠道**：Webhook / Token 类（飞书、钉钉、Telegram、邮件、Bark 等 30+ 渠道）
+- **服务端校验**：创建/测试通知账户时拒绝不支持的渠道类型（`supported-channels.ts`）
+- **前端清理**：移除「插件」Tab、扫码授权弹窗、浏览器 Web Push 设置项
+- **Vercel 构建**：恢复真实 HTTP 通知发送，仅 stub 已移除的 IM 服务模块
+
+### 安全
+
+- 登录失败锁定与限流机制保持不变，**不提供运维解锁脚本或后门**
+- 锁定按用户名跨 IP 生效，防止换 IP 暴力破解
+- 登录 429 响应显示剩余锁定时间
+- 移除 `scripts/clear-login-lock.ts`；认证接口限流收紧为 10 次/分钟
+
+### 文档
+
+- 更新 README、VERCEL_DEPLOYMENT、CHANNEL_COMPATIBILITY 等文档以反映云端可用渠道列表
+
 ## v2.6.0 (2026-05-31)
 
 ### 安全加固

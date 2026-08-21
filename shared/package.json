@@ -9,7 +9,11 @@
     "./crypto": "./dist/crypto.js",
     "./blessings": "./dist/blessings.js",
     "./relationship": "./dist/relationship.js",
-    "./templates": "./dist/templates.js"
+    "./templates": "./dist/templates.js",
+    "./notification-presets": "./dist/notification-presets.js",
+    "./event-schedule": "./dist/event-schedule.js",
+    "./lunar-calendar": "./dist/lunar-calendar.js",
+    "./email-compose": "./dist/email-compose.js"
   },
   "scripts": {
     "build": "tsc",

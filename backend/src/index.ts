@@ -6,6 +6,7 @@ import { logger as honoLogger } from 'hono/logger';
 import { requestIdMiddleware } from './middleware/request-id.js';
 import { securityHeaders } from './middleware/security-headers.js';
 import { csrfProtection } from './middleware/csrf.js';
+import { getConfiguredOrigins, originMatchesHost } from './utils/allowed-origins.js';
 import { authRateLimit, apiRateLimit, rateLimit } from './middleware/rate-limit.js';
 import 'dotenv/config';
 import { createLogger } from './utils/logger.js';
@@ -30,15 +31,15 @@ const log = createLogger('bootstrap');
 
 async function bootstrap() {
 
-  // 0. 初始化密钥（首次启动自动生成，后续启动从文件读取�?
+  // 0. 初始化密钥（首次启动自动生成，后续启动从文件读取）
   log.info('Initializing secret keys...');
   const secrets = initSecretKeys();
   log.info('Secret keys ready');
 
-  // 1. 等待数据库就�?
+  // 1. 等待数据库就绪
   log.info('等待数据库初始化...');
   await waitForDb();
-  log.info('数据库就�?);
+  log.info('数据库就绪');
 
   // 2. 执行 schema 迁移
   await runMigrations();
@@ -58,11 +59,11 @@ async function bootstrap() {
       [username, passwordHash]
     );
 
-    console.log(`�?默认用户已创�?(用户�? ${username}, 密码: ${password})`);
-    console.log('⚠️  请登录后立即修改默认密码�?);
+    console.log(`✨默认用户已创建(用户名 ${username}, 密码: ${password})`);
+    console.log('⚠️  请登录后立即修改默认密码！');
 
   } else {
-    log.info('数据库已初始化，已存在用�?);
+    log.info('数据库已初始化，已存在用户');
   }
 
   // 4. 创建 Hono 应用
@@ -70,11 +71,21 @@ async function bootstrap() {
 
   app.use('*', honoLogger());
   app.use('*', securityHeaders);
-  const corsOrigins = process.env.CORS_ORIGIN
-    ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
-    : ['http://localhost:5173', 'http://localhost:3000'];
+  // CORS: 允许精确白名单 + 同 Host Origin（LAN IP:端口 无需手动 CORS_ORIGIN）
+  const corsAllowList = getConfiguredOrigins();
+  const isCorsOriginAllowed = (origin: string, host: string | undefined) => {
+    if (corsAllowList.includes('*')) return true;
+    if (originMatchesHost(origin, host)) return true;
+    return corsAllowList.includes(origin) || corsAllowList.some(a => a.startsWith('*.') && origin.endsWith(a.slice(2)));
+  };
   app.use('*', cors({
-    origin: corsOrigins,
+    origin: (origin, c) => {
+      if (!origin) return origin;
+      if (corsAllowList.includes('*')) return origin;
+      const host = c.req.header('host') ?? c.req.header('x-forwarded-host');
+      if (isCorsOriginAllowed(origin, host)) return origin;
+      return undefined as unknown as string;
+    },
     credentials: true,
   }));
   app.use('*', requestIdMiddleware);

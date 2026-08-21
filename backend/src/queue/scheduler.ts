@@ -2,6 +2,7 @@ import { Cron } from 'croner';
 import { sendReminders, githubBackup, archiveLoginHistory, cleanupSessions } from '../jobs/tasks.js';
 import { query } from '../db/index.js';
 import { createLogger } from '../utils/logger.js';
+import { purgeOldTodoCompletions } from '../services/todo.service.js';
 
 const log = createLogger('scheduler');
 
@@ -78,6 +79,14 @@ export async function startScheduler(): Promise<void> {
     await runJob('plugin-session-cleanup', async () => {
       const result = await query("DELETE FROM plugin_sessions WHERE expires_at < datetime('now')");
       log.info({ count: result.rowCount ?? 0 }, 'Cleaned up expired plugin sessions');
+    });
+  }));
+
+  // 每天凌晨 4 点清理 365 天前的 todo 完成记录（北京时间）
+  jobs.push(new Cron('0 4 * * *', { timezone: 'Asia/Shanghai', name: 'daily-todo-purge' }, async () => {
+    await runJob('daily-todo-purge', async () => {
+      const count = await purgeOldTodoCompletions(365);
+      log.info({ count }, 'Purged old todo completions');
     });
   }));
 

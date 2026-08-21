@@ -18,20 +18,20 @@ const completeSchema = z.object({
   occurrenceDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 });
 
-todos.get('/completions', async (c) => {
+async function handleListCompletions(c: any) {
   const userId = Number(c.get('user').id);
   const rows = await listTodoCompletions(userId);
   return c.json({
     success: true,
-    data: rows.map((r) => ({
+    data: rows.map((r: any) => ({
       eventId: r.event_id,
       occurrenceDate: todoOccurrenceDate(r.occurrence_date),
       completedAt: r.completed_at,
     })),
   });
-});
+}
 
-todos.post('/complete', async (c) => {
+async function handleMarkComplete(c: any) {
   const userId = Number(c.get('user').id);
   const body = await c.req.json().catch(() => ({}));
   const parsed = completeSchema.safeParse(body);
@@ -55,9 +55,9 @@ todos.post('/complete', async (c) => {
 
   await markTodoComplete(userId, parsed.data.eventId, dateStr);
   return c.json({ success: true, data: { eventId: parsed.data.eventId, occurrenceDate: dateStr } });
-});
+}
 
-todos.delete('/complete', async (c) => {
+async function handleUnmarkComplete(c: any) {
   const userId = Number(c.get('user').id);
   const body = await c.req.json().catch(() => ({}));
   const parsed = completeSchema.safeParse(body);
@@ -82,6 +82,19 @@ todos.delete('/complete', async (c) => {
   const ok = await unmarkTodoComplete(userId, parsed.data.eventId, dateStr);
   if (!ok) return c.json({ success: false, error: '记录不存在' }, 404);
   return c.json({ success: true });
-});
+}
+
+// Vercel-identical routes
+todos.get('/completions', handleListCompletions);
+todos.post('/complete', handleMarkComplete);
+todos.delete('/complete', handleUnmarkComplete);
+
+// Aliases required by docker spec: GET /api/todos, GET /api/todos/history, POST/PUT /api/todos
+todos.get('/', handleListCompletions);
+todos.get('/history', handleListCompletions);
+todos.post('/', handleMarkComplete);
+todos.put('/complete', handleUnmarkComplete);
+todos.put('/', handleUnmarkComplete);
+todos.delete('/', handleUnmarkComplete);
 
 export default todos;

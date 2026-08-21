@@ -10,7 +10,7 @@
 
 ---
 
-[![Version](https://img.shields.io/badge/Version-2.6.0-blue?style=flat&color=2563eb)](https://github.com/WXFffff666/timemark-docker)
+[![Version](https://img.shields.io/badge/Version-2.16.0-blue?style=flat&color=2563eb)](https://github.com/WXFffff666/timemark-docker)
 [![Docker Pulls](https://img.shields.io/docker/pulls/xfffff666/timemark?style=flat&color=0ea5e9)](https://hub.docker.com/r/xfffff666/timemark)
 [![Docker Image Size](https://img.shields.io/docker/image-size/xfffff666/timemark/latest?style=flat&color=6366f1)](https://hub.docker.com/r/xfffff666/timemark)
 [![GitHub Stars](https://img.shields.io/github/stars/WXFffff666/timemark-docker?style=flat&color=f59e0b)](https://github.com/WXFffff666/timemark-docker/stargazers)
@@ -32,7 +32,7 @@
 
 v2.0 是一次彻底的架构重构，从三容器方案精简为单容器部署，同时大幅强化了安全性和性能。v2.4.x 在此基础上增加了通知模板、重复事件等重要功能。
 
-| 对比项 | v1.x | v2.6.0 |
+| 对比项 | v1.x | v2.16.0 |
 |:------:|:----:|:------:|
 | 数据库 | PostgreSQL + Redis | **SQLite (内置，零配置)** |
 | 容器数量 | 3 个 | **1 个** |
@@ -136,7 +136,7 @@ docker compose up -d
 
 ```
 ┌─────────────────────────────────────────────────┐
-│                TimeMark v2.5.0                   │
+│                TimeMark v2.16.0                  │
 │            单容器 · 零依赖 · 开箱即用             │
 ├─────────────────────────────────────────────────┤
 │                                                  │
@@ -465,6 +465,7 @@ docker compose restart
 
 | 版本 | 日期 | 内容 |
 |:----:|:----:|------|
+| **v2.16.0** | 2026-07 | 合并同步 vercel v2.7–v2.16：双历/农历修复、NTP 按时区校准、登录加速、单用户模式、联系人多邮箱/手机、待办完成历史、日历视图、安全加固（零信任/SSRF/Passkey）等（详见 CHANGELOG） |
 | **v2.4.2** | 2026-05 | 通知预览按事件类型分组显示模板；Resend 发件人邮箱字段改为可选；调度器优化（每分钟检查）；事件创建/更新后立即触发提醒 |
 | **v2.4.1** | 2026-05 | 修复 Resend 发件人邮箱强制必填；修复 Zod 验证规则；调度器时间匹配优化；事件创建后立即触发提醒 |
 | **v2.4.0** | 2026-05 | 通知模板预览（6 种预设模板）；自定义事件模板；浏览器推送 UI；日历导出按钮；重复事件选项；更多事件类型（会议/截止日期/旅行/毕业/婚礼/医疗）；CSRF 保护；API 分页；单元测试 |
