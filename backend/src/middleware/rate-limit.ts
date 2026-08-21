@@ -90,3 +90,6 @@ export const authRateLimit = rateLimit(15, 60 * 1000);
  * General API rate limiter (100 requests per minute)
  */
 export const apiRateLimit = rateLimit(100, 60 * 1000);
+
+export const loginRateLimit = rateLimit(15, 60 * 1000);
+export const authMutationRateLimit = rateLimit(15, 60 * 1000);

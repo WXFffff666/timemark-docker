@@ -21,8 +21,8 @@ export async function createSession(userId: string, deviceFingerprint: string, i
   );
 
   const id = result.rows[0].id;
-  const accessToken = await generateAccessToken(userId, undefined, rememberMe);
-  const refreshToken = await generateRefreshToken(userId);
+  const accessToken = await generateAccessToken(userId, token, rememberMe);
+  const refreshToken = await generateRefreshToken(userId, token);
 
   return {
     session: { id, userId, token, deviceFingerprint, isTrusted, expiresAt },
@@ -43,6 +43,20 @@ export async function getSessionByToken(token: string): Promise<Session | null> 
 
 export async function deleteSession(token: string): Promise<void> {
   await query('DELETE FROM sessions WHERE token = $1', [token]);
+}
+
+export async function deleteAllUserSessions(userId: string, exceptToken?: string): Promise<void> {
+  const numericUserId = parseInt(userId, 10);
+  if (isNaN(numericUserId)) return;
+  if (exceptToken) {
+    await query('DELETE FROM sessions WHERE user_id = $1 AND token != $2', [numericUserId, exceptToken]);
+    return;
+  }
+  await query('DELETE FROM sessions WHERE user_id = $1', [numericUserId]);
+}
+
+export async function deleteSessionById(sessionId: string): Promise<void> {
+  await query('DELETE FROM sessions WHERE id = $1', [sessionId]);
 }
 
 export async function markDeviceAsTrusted(sessionId: string): Promise<void> {

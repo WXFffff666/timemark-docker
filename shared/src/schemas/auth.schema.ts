@@ -5,6 +5,8 @@ export const loginSchema = z.object({
   password: z.string().min(8),
   deviceFingerprint: z.string().optional(),
   rememberMe: z.boolean().optional().default(false),
+  turnstileToken: z.string().optional(),
+  totpCode: z.string().optional(),
 });
 
 export const changePasswordSchema = z.object({

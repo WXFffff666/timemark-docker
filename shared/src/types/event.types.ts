@@ -69,6 +69,7 @@ export interface ReminderConfig {
   channels?: NotificationChannel[] | string[];
   accountIds?: string[];
   reminderTimes?: string[]; // 多选提醒时间 HH:mm 数组
+  importSource?: string;
 }
 
 export interface RecurringConfig {

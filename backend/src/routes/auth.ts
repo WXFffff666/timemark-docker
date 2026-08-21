@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { verifyUserForLogin, getUserByUsername, createLoginLog, trackLoginFailure, getAccountLockStatus, clearAccountLock, getIpBlockStatus, evaluateIpBlock, checkIpWhitelistFromUser, verifyTotpCode } from '../services/auth.service.js';
+import { verifyUserForLogin, getUserByUsername, createLoginLog, trackLoginFailure, getAccountLockStatus, clearAccountLock, getIpBlockStatus, evaluateIpBlock, checkIpWhitelistFromUser, verifyTotpCode, verifyUserPassword } from '../services/auth.service.js';
 import { getClientIp, getClientIpInfo } from '../utils/client-ip.js';
 import { getTurnstileSiteKey, isTurnstileEnabled, verifyTurnstileToken } from '../utils/turnstile.js';
 import { isSafePublicUrl } from '../utils/url-safety.js';
@@ -96,7 +96,6 @@ auth.post('/login', loginRateLimit, async (c) => {
           userAgent,
           failureCount: tracking.failureCount,
           locked: true,
-          lockMinutes: tracking.lockMinutes,
           alertType: 'login_failure',
         });
 
