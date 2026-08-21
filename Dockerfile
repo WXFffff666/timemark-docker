@@ -3,11 +3,11 @@
 # Or pre-build: pnpm -r build && docker build -t timemark:latest .
 
 # Stage 1: Build (compile TypeScript)
-FROM node:20.18-alpine AS builder
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 
-RUN npm install -g pnpm
+RUN npm install -g pnpm@9
 
 # Copy package files and install all dependencies (including dev for compilation)
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
@@ -23,7 +23,7 @@ COPY backend/ ./backend/
 RUN pnpm build:shared && pnpm build:backend
 
 # Stage 2: Runtime (minimal production image)
-FROM node:20.18-alpine
+FROM node:22-alpine
 
 # icu-data-full: Required for correct Chinese date formatting (Intl.DateTimeFormat)
 # dumb-init: Proper PID 1 signal handling in containers
@@ -35,7 +35,7 @@ ENV NODE_ENV=production
 ENV TZ=Asia/Shanghai
 
 # Install pnpm via npm
-RUN npm install -g pnpm
+RUN npm install -g pnpm@9
 
 # Create non-root user
 RUN addgroup -S app && adduser -S app -G app
@@ -45,10 +45,8 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY shared/package.json ./shared/
 COPY backend/package.json ./backend/
 
-# Use shamefully-hoist to flatten node_modules (fixes pnpm symlink issues in Docker)
 # --no-optional excludes heavy optional deps (wechaty, baileys, oicq) for smaller image
-RUN echo "shamefully-hoist=true" > .npmrc && \
-    pnpm install --prod --frozen-lockfile --no-optional
+RUN pnpm install --prod --frozen-lockfile --no-optional
 
 # Copy compiled artifacts from builder stage
 COPY --from=builder /app/shared/dist ./shared/dist

@@ -14,5 +14,9 @@
     "build:frontend": "pnpm --filter frontend build",
     "build:backend": "pnpm --filter backend build",
     "build": "pnpm build:shared && pnpm build:frontend && pnpm build:backend"
+  },
+  "packageManager": "pnpm@9.12.0",
+  "engines": {
+    "pnpm": ">=9.0.0"
   }
 }

@@ -38,7 +38,7 @@ importers:
         specifier: ^3.12.0
         version: 3.12.0
       lunar-javascript:
-        specifier: ^1.6.12
+        specifier: ^1.7.7
         version: 1.7.7
       nodemailer:
         specifier: ^8.0.6
@@ -67,6 +67,16 @@ importers:
       zod:
         specifier: ^3.22.4
         version: 3.25.76
+    optionalDependencies:
+      baileys:
+        specifier: ^6.10.0
+        version: 6.17.16(eslint@9.39.4(jiti@1.21.7))(jimp@0.16.13)(qrcode-terminal@0.12.0)(typescript@5.9.3)
+      oicq:
+        specifier: ^2.3.1
+        version: 2.3.1
+      wechaty:
+        specifier: ^1.20.2
+        version: 1.20.2(@swc/core@1.15.24)(brolog@1.14.2)(redux@4.2.1)(rxjs@7.8.2)
     devDependencies:
       '@types/bcryptjs':
         specifier: ^2.4.6
@@ -95,16 +105,6 @@ importers:
       vitest:
         specifier: ^1.6.1
         version: 1.6.1(@types/node@20.19.37)(@vitest/ui@1.6.1)(jsdom@28.1.0(@noble/hashes@2.0.1))
-    optionalDependencies:
-      baileys:
-        specifier: ^6.10.0
-        version: 6.17.16(eslint@9.39.4(jiti@1.21.7))(jimp@0.16.13)(qrcode-terminal@0.12.0)(typescript@5.9.3)
-      oicq:
-        specifier: ^2.3.1
-        version: 2.3.1
-      wechaty:
-        specifier: ^1.20.2
-        version: 1.20.2(@swc/core@1.15.24)(brolog@1.14.2)(redux@4.2.1)(rxjs@7.8.2)
 
   frontend:
     dependencies:
@@ -1388,79 +1388,66 @@ packages:
     resolution: {integrity: sha512-KUizqxpwaR2AZdAUsMWfL/C94pUu7TKpoPd88c8yFVixJ+l9hejkrwoK5Zj3wiNh65UeyryKnJyxL1b7yNqFQA==}
     cpu: [arm]
     os: [linux]
-    libc: [glibc]
 
   '@rollup/rollup-linux-arm-musleabihf@4.59.1':
     resolution: {integrity: sha512-MZoQ/am77ckJtZGFAtPucgUuJWiop3m2R3lw7tC0QCcbfl4DRhQUBUkHWCkcrT3pqy5Mzv5QQgY6Dmlba6iTWg==}
     cpu: [arm]
     os: [linux]
-    libc: [musl]
 
   '@rollup/rollup-linux-arm64-gnu@4.59.1':
     resolution: {integrity: sha512-Sez95TP6xGjkWB1608EfhCX1gdGrO5wzyN99VqzRtC17x/1bhw5VU1V0GfKUwbW/Xr1J8mSasoFoJa6Y7aGGSA==}
     cpu: [arm64]
     os: [linux]
-    libc: [glibc]
 
   '@rollup/rollup-linux-arm64-musl@4.59.1':
     resolution: {integrity: sha512-9Cs2Seq98LWNOJzR89EGTZoiP8EkZ9UbQhBlDgfAkM6asVna1xJ04W2CLYWDN/RpUgOjtQvcv8wQVi1t5oQazA==}
     cpu: [arm64]
     os: [linux]
-    libc: [musl]
 
   '@rollup/rollup-linux-loong64-gnu@4.59.1':
     resolution: {integrity: sha512-n9yqttftgFy7IrNEnHy1bOp6B4OSe8mJDiPkT7EqlM9FnKOwUMnCK62ixW0Kd9Clw0/wgvh8+SqaDXMFvw3KqQ==}
     cpu: [loong64]
     os: [linux]
-    libc: [glibc]
 
   '@rollup/rollup-linux-loong64-musl@4.59.1':
     resolution: {integrity: sha512-SfpNXDzVTqs/riak4xXcLpq5gIQWsqGWMhN1AGRQKB4qGSs4r0sEs3ervXPcE1O9RsQ5bm8Muz6zmQpQnPss1g==}
     cpu: [loong64]
     os: [linux]
-    libc: [musl]
 
   '@rollup/rollup-linux-ppc64-gnu@4.59.1':
     resolution: {integrity: sha512-LjaChED0wQnjKZU+tsmGbN+9nN1XhaWUkAlSbTdhpEseCS4a15f/Q8xC2BN4GDKRzhhLZpYtJBZr2NZhR0jvNw==}
     cpu: [ppc64]
     os: [linux]
-    libc: [glibc]
 
   '@rollup/rollup-linux-ppc64-musl@4.59.1':
     resolution: {integrity: sha512-ojW7iTJSIs4pwB2xV6QXGwNyDctvXOivYllttuPbXguuKDX5vwpqYJsHc6D2LZzjDGHML414Tuj3LvVPe1CT1A==}
     cpu: [ppc64]
     os: [linux]
-    libc: [musl]
 
   '@rollup/rollup-linux-riscv64-gnu@4.59.1':
     resolution: {integrity: sha512-FP+Q6WTcxxvsr0wQczhSE+tOZvFPV8A/mUE6mhZYFW9/eea/y/XqAgRoLLMuE9Cz0hfX5bi7p116IWoB+P237A==}
     cpu: [riscv64]
     os: [linux]
-    libc: [glibc]
 
   '@rollup/rollup-linux-riscv64-musl@4.59.1':
     resolution: {integrity: sha512-L1uD9b/Ig8Z+rn1KttCJjwhN1FgjRMBKsPaBsDKkfUl7GfFq71pU4vWCnpOsGljycFEbkHWARZLf4lMYg3WOLw==}
     cpu: [riscv64]
     os: [linux]
-    libc: [musl]
 
   '@rollup/rollup-linux-s390x-gnu@4.59.1':
     resolution: {integrity: sha512-EZc9NGTk/oSUzzOD4nYY4gIjteo2M3CiozX6t1IXGCOdgxJTlVu/7EdPeiqeHPSIrxkLhavqpBAUCfvC6vBOug==}
     cpu: [s390x]
     os: [linux]
-    libc: [glibc]
 
   '@rollup/rollup-linux-x64-gnu@4.59.1':
     resolution: {integrity: sha512-NQ9KyU1Anuy59L8+HHOKM++CoUxrQWrZWXRik4BJFm+7i5NP6q/SW43xIBr80zzt+PDBJ7LeNmloQGfa0JGk0w==}
     cpu: [x64]
     os: [linux]
-    libc: [glibc]
 
   '@rollup/rollup-linux-x64-musl@4.59.1':
     resolution: {integrity: sha512-GZkLk2t6naywsveSFBsEb0PLU+JC9ggVjbndsbG20VPhar6D1gkMfCx4NfP9owpovBXTN+eRdqGSkDGIxPHhmQ==}
     cpu: [x64]
     os: [linux]
-    libc: [musl]
 
   '@rollup/rollup-openbsd-x64@4.59.1':
     resolution: {integrity: sha512-1hjG9Jpl2KDOetr64iQd8AZAEjkDUUK5RbDkYWsViYLC1op1oNzdjMJeFiofcGhqbNTaY2kfgqowE7DILifsrA==}
@@ -1530,42 +1517,36 @@ packages:
     engines: {node: '>=10'}
     cpu: [arm64]
     os: [linux]
-    libc: [glibc]
 
   '@swc/core-linux-arm64-musl@1.15.24':
     resolution: {integrity: sha512-ZpF/pRe1guk6sKzQI9D1jAORtjTdNlyeXn9GDz8ophof/w2WhojRblvSDJaGe7rJjcPN8AaOkhwdRUh7q8oYIg==}
     engines: {node: '>=10'}
     cpu: [arm64]
     os: [linux]
-    libc: [musl]
 
   '@swc/core-linux-ppc64-gnu@1.15.24':
     resolution: {integrity: sha512-QZEsZfisHTSJlmyChgDFNmKPb3W6Lhbfo/O76HhIngfEdnQNmukS38/VSe1feho+xkV5A5hETyCbx3sALBZKAQ==}
     engines: {node: '>=10'}
     cpu: [ppc64]
     os: [linux]
-    libc: [glibc]
 
   '@swc/core-linux-s390x-gnu@1.15.24':
     resolution: {integrity: sha512-DLdJKVsJgglqQrJBuoUYNmzm3leI7kUZhLbZGHv42onfKsGf6JDS3+bzCUQfte/XOqDjh/tmmn1DR/CF/tCJFw==}
     engines: {node: '>=10'}
     cpu: [s390x]
     os: [linux]
-    libc: [glibc]
 
   '@swc/core-linux-x64-gnu@1.15.24':
     resolution: {integrity: sha512-IpLYfposPA/XLxYOKpRfeccl1p5dDa3+okZDHHTchBkXEaVCnq5MADPmIWwIYj1tudt7hORsEHccG5no6IUQRw==}
     engines: {node: '>=10'}
     cpu: [x64]
     os: [linux]
-    libc: [glibc]
 
   '@swc/core-linux-x64-musl@1.15.24':
     resolution: {integrity: sha512-JHy3fMSc0t/EPWgo74+OK5TGr51aElnzqfUPaiRf2qJ/BfX5CUCfMiWVBuhI7qmVMBnk1jTRnL/xZnOSHDPLYg==}
     engines: {node: '>=10'}
     cpu: [x64]
     os: [linux]
-    libc: [musl]
 
   '@swc/core-win32-arm64-msvc@1.15.24':
     resolution: {integrity: sha512-Txj+qUH1z2bUd1P3JvwByfjKFti3cptlAxhWgmunBUUxy/IW3CXLZ6l6Gk4liANadKkU71nIU1X30Z5vpMT3BA==}
@@ -2453,6 +2434,7 @@ packages:
   eslint@9.39.4:
     resolution: {integrity: sha512-XoMjdBOwe/esVgEvLmNsD3IRHkm7fbKIUGvrleloJXUZgDHig2IPWNniv+GwjyJXzuNqVjlr5+4yVUZjycJwfQ==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+    deprecated: This version is no longer supported. Please see https://eslint.org/version-support for other options.
     hasBin: true
     peerDependencies:
       jiti: '*'
@@ -4912,7 +4894,7 @@ snapshots:
     dependencies:
       lodash.camelcase: 4.3.0
       long: 5.3.2
-      protobufjs: 7.5.4
+      protobufjs: 7.6.1
       yargs: 17.7.2
     optional: true
 
