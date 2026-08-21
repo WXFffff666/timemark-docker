@@ -237,6 +237,15 @@ docker compose up -d
 - 推荐使用 Docker Hub 源（`docker-compose.dockerhub.yml`），无需登录
 - 数据目录建议放在 `/vol1/docker/timemark/data`
 
+#### FNOS 故障排查（Issue #4：权限不足 + 登录 403）
+
+| 现象 | 原因 | 解决 |
+|------|------|------|
+| `EACCES /app/data` / `SQLite readonly` / 容器反复重启 | FNOS 1.1.3107+ 宿主机卷以 root 创建，容器内 `app` 用户无写权限 | 方案A：升级到已含 `chmod 777 /app/data` 的最新镜像（`docker compose pull && docker compose up -d`）；方案B：`docker-compose.yml` 取消注释 `user: "0:0"` 以 root 运行（仅注释可选，不强制所有用户） |
+| 局域网 `http://192.168.x.x:3808` 登录 403 `Origin not allowed` | 旧镜像 CSRF 仅校验 `CORS_ORIGIN`，未允许同 Host | 新版镜像已支持 `Origin` 与 `Host` 同源自动放行（`originMatchesHost`，与 vercel 逻辑一致），无需设置 `CORS_ORIGIN`；旧版可临时加 `CORS_ORIGIN=http://192.168.x.x:3808` |
+
+> 说明：`Dockerfile` 已改为 `mkdir -p /app/data && chown -R app:app /app && chmod -R 777 /app/data`，默认仍以 `USER app` 运行，仅在宿主机卷属主异常时 `777` 兜底；`user: "0:0"` 为可选注释，适合 FNOS 等 NAS 临时提权。
+
 ---
 
 ### 群晖NAS 部署

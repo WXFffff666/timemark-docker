@@ -33,6 +33,14 @@
   - `timemark-docker/shared/dist`（60 文件 tsc 产物）已删除；其余路径及 `timemark-vercel`/`timemark-landing` 均不存在
 - 扫描 `data/*.bak` / `.env.local` / `.env.tmp`（排除 node_modules）均无残留；保留 `node_modules` / `package.json` / `Dockerfile` / `.github` / `.omo` / 锁文件
 - `git status --ignored --short` 清理前含 `!! shared/dist/`，清理后仅 `node_modules` 被忽略，无 `dist/.turbo` 泄露，工作区干净
+## 2026-08-22 fix(docker): FNOS 权限不足 + LAN 403 (Issue #4)
+
+- 权限：`Dockerfile` 由 `chown -R app:app /app` 改为 `chown -R app:app /app && chmod -R 777 /app/data`，注释写明 FNOS 1.1.3107 宿主机卷以 root 创建时 777 兜底，默认仍 `USER app` 非强制 root；选 777 而非 entrypoint gosu 是最简有效（无额外脚本/依赖，镜像层一次生效）。
+- Compose：`docker-compose.yml` / `docker-compose.simple.yml` 已有 `user: "0:0"` 注释，本次补齐 `docker-compose.nas.yml` 同款注释 + `CORS_ORIGIN` 临时方案说明，保持 ports/env/volumes 不变，仅注释可选。
+- CSRF：`backend/src/middleware/csrf.ts` 重写为复用 `backend/src/utils/allowed-origins.ts`（新建，与 vercel 同步 `getConfiguredOrigins/isAllowedOrigin/originMatchesHost`），`originMatchesHost` 以 `new URL(origin).host === host` 允许同 Host（如 `http://192.168.x.x:3808`）无需 `CORS_ORIGIN`，与 vercel 一致；保留 `X-Requested-With + Bearer`、`X-API-Key` 旁路、`Origin/Referer` 提取及 `*`/`*.` 匹配。
+- 文档：`DEPLOYMENT.md` 飞牛OS 节新增 FNOS 故障排查小节，表格说明两种 fix（重拉镜像 vs 取消注释 user）。
+- 验证：`Select-String user:` 命中 3 compose，`isAllowedOrigin` 含 host 检查，`Dockerfile` 含 777，待 git commit。
+
 ## 2026-08-22 fix(ci): pnpm/action-setup Multiple versions (32502948645, 32502067662)
 
 - Root cause: `pnpm/action-setup@v4` `src/install-pnpm/run.ts` does strict `packageManagerVersion !== inputVersion`; `9 !== 9.12.0` always throws when both `with: version: 9` and `packageManager: pnpm@9.12.0` present.

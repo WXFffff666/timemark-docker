@@ -6,10 +6,14 @@ services:
     build: .
     container_name: timemark-app
     restart: unless-stopped
+    # FNOS 1.1.3107+ 权限不足（/app/data 无法写入）时，取消下一行注释以 root 运行：
+    # user: "0:0"
     ports:
       - "3000:3000"
     environment:
       TZ: Asia/Shanghai
+      # LAN IP 登录 403 时（旧版镜像），可临时加： CORS_ORIGIN=http://192.168.x.x:3808
+      # 新版已支持同 Host 自动放行，无需手动设置 CORS_ORIGIN
     dns:
       - 223.5.5.5
       - 8.8.8.8

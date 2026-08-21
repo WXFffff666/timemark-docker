@@ -59,7 +59,10 @@ COPY frontend/dist ./frontend/dist
 COPY docker/schema.sql ./docker/schema.sql
 
 # Create data directory with correct permissions for non-root user
-RUN mkdir -p /app/data && chown -R app:app /app
+# chmod 777 兜底：FNOS 1.1.3107 等 NAS 宿主机卷以 root 创建，容器内 app(非 root) 会 EACCES；
+# 777 保证任何挂载属主下均可写入，仍默认以 USER app 运行（非强制 root）。
+# 若仍权限不足，可在 compose 中取消注释 user: "0:0" 以 root 运行容器。
+RUN mkdir -p /app/data && chown -R app:app /app && chmod -R 777 /app/data
 
 EXPOSE 3000
 
