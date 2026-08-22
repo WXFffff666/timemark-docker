@@ -18,12 +18,28 @@
 
 > Secret Key 仅用于服务端，不要写进前端代码或提交到 Git。
 
-## 二、写入 Vercel 并部署
+## 二、写入部署环境
+
+### Docker（本仓库 · v2.16.0）
+
+在 `docker-compose.yml` 的 `environment` 中添加（**仅 Production/公网需要**）：
+
+```yaml
+environment:
+  TURNSTILE_SITE_KEY: "0x4AAAAAA..."   # Cloudflare Site Key（可公开）
+  TURNSTILE_SECRET_KEY: "0x4AAAAAA..." # Secret Key（勿提交到 Git，生产必填）
+```
+
+`docker compose up -d` 重启即可。
+
+> `TURNSTILE_SECRET_KEY` 与 `JWT_SECRET` / `MASTER_KEY` 一样，**仅 Production 需要**。Docker 无 Preview 区分，按生产原则保管即可。
+
+### Vercel（参考）
 
 在项目根目录执行（按提示粘贴两个 Key）：
 
 ```powershell
-cd D:\Works_Cursor\timemark-vercel
+cd D:\Works\timemark-vercel
 .\scripts\setup-turnstile.ps1
 ```
 
@@ -33,8 +49,6 @@ cd D:\Works_Cursor\timemark-vercel
 |--------|-----|
 | `TURNSTILE_SITE_KEY` | Cloudflare 的 Site Key（勿写成 `SiteKey`） |
 | `TURNSTILE_SECRET_KEY` | Cloudflare 的 Secret Key（勿写成 `SecretKey`） |
-
-> `TURNSTILE_SECRET_KEY` 与 `JWT_SECRET` / `MASTER_KEY` / `CRON_SECRET` 一样，**仅 Production**。Preview 部署受 Vercel Standard Protection 保护，不应携带生产密钥。
 
 保存后 **Redeploy** 一次生产部署。
 

@@ -78,10 +78,15 @@ v2.0 是一次彻底的架构重构，从三容器方案精简为单容器部署
 | 闰月自动转换 | 43+ 通知渠道 | 40+ 称呼映射 | 登录锁定 + 告警 | NTP 自动同步 |
 | 公历/农历双历 | 同渠道多账户 | 家庭关系映射 | AES-256 凭证加密 | 自定义时区 |
 
-| 📝 通知模板 | 🔄 重复事件 | 📧 多邮箱支持 | 📅 日历导出 | 🎯 11 种事件类型 |
+| 📝 通知模板 | 🔄 重复事件 | 📧 多邮箱支持 | 📅 日历三视图 | 🎯 11 种事件类型 |
 |:----------:|:----------:|:------------:|:----------:|:---------------:|
-| 13 种预设模板 | 每天/每周/每月/每年 | 多收件人邮箱 | ICS 文件导出 | 生日/纪念日/节日等 |
-| 按事件类型分组 | 自动创建下次事件 | 调度器每分钟检查 | Google/Apple 日历 | 会议/旅行/婚礼等 |
+| 13 种预设模板 | 每天/每周/每月/每年 | 联系人多邮箱/手机 | 年/月/日视图 | 生日/纪念日/节日等 |
+| 按事件类型分组 | 自动创建下次事件 | 快捷发信可选收件人 | 公历/农历/双历 | 会议/旅行/婚礼等 |
+
+| 📥 Inbox 收件箱 | 🔌 Integrations | 👥 固定联系人 | ✅ 待办历史 | ⏰ NTP 校准 |
+|:-------------:|:-------------:|:----------:|:---------:|:---------:|
+| 通知全链路收件箱 | 入站 Webhook | 多邮箱/手机带标签 | 打勾完成 + 历史 | WorldTimeAPI/timeapi.io |
+| 指数退避重试 | ICS 订阅/同步 | 批量邮件一键合并 | 365 天自动清理 | 按用户 IANA 时区 |
 
 ---
 
@@ -195,13 +200,58 @@ docker compose up -d
 | 🏥 医疗 | 体检、复诊、用药提醒 | 年度体检 |
 | 📌 自定义 | 任意重要日期 | 驾照到期、保险续费 |
 
-### 日历支持
+### 日历支持（v2.16.0 三视图 + 双历修复）
 
 | 模式 | 说明 |
 |:----:|------|
 | **公历** | 标准公历日期 |
-| **农历** | 精准农历转换，含闰月自动处理 |
-| **双历** | 同时显示公历 + 农历对应日期 |
+| **农历** | 农历文本输入，精准转换，含闰月自动处理 |
+| **双历** | 公历与农历双向同步；保存时写入 `lunarDate` 供 Cron 农历提醒 |
+
+> v2.16.0 修复：事件表单双历模式正确同步 `lunarDate`，`resolveNextOccurrenceDate` 农历/双历对齐 Cron；日历页标签显示「公历/农历/双历」；`runLunarCalendarSelfTest` 往返校验。视图支持年/月/日三视图切换。
+
+### 时区与 NTP（v2.16.0）
+
+| 功能 | 说明 |
+|:----:|------|
+| **默认时区** | `Asia/Shanghai`（北京时间），首页快捷切换与设置页全局联动 |
+| **NTP 校准** | 后台从 WorldTimeAPI / timeapi.io 获取权威时间，校正服务器时钟漂移 |
+| **按用户时区** | 切换时区后 NTP 与「今天」计算跟随该 IANA 时区；`GET /api/time/status?timezone=Asia/Shanghai` |
+| **首页时钟** | 接入 NTP 偏移后的校正时间 |
+
+Cron 每分钟提醒使用校正后的时间，在配置的提醒时刻 ±2 分钟内触发。
+
+### 固定联系人与批量邮件（v2.15.0 v30）
+
+| 功能 | 说明 |
+|:----:|------|
+| 多联系方式 | 每个联系人可配多个邮箱/手机/Telegram/QQ/WxPusher，带标签（如「工作」「妈妈」） |
+| 快捷发信 | 仅 1 邮箱直接编辑；多邮箱先二级界面手动勾选收件人 |
+| 批量邮件 | 选中联系人自动合并其全部邮箱；支持模板变量 `{{contact_name}}` |
+| 数据存储 | `fixed_contacts.contact_methods` JSONB（v30），旧单字段自动迁入 |
+
+### 近期待办（v2.15.0 v29）
+
+| 功能 | 说明 |
+|:----:|------|
+| 待办窗口 | 事件进入「提前 N 天」窗口后出现在 `/todos` 与首页待办数字 |
+| 打勾完成 | 点击圆圈标记完成，同步服务端 `todo_completions`（v29） |
+| 完成历史 | 「完成历史」标签页查看已归档记录；数据库保留 ~365 天后清理 |
+
+### 集成（Webhook / 日历）
+
+| 功能 | 说明 |
+|:----:|------|
+| 入站 Webhook | 外部系统 POST JSON 自动创建事件 |
+| ICS 订阅 Feed | Google/Outlook 订阅本应用事件 |
+| 外部 ICS 同步 | 从 URL 拉取事件（`isSafePublicUrl()` SSRF 校验） |
+| 冲突提示 | 通知中提示同日其他日程 |
+
+详见 `docs/INTEGRATIONS.md`（Docker 版同步 vercel 同名文档）。
+
+### Inbox 全链路
+
+通知成功写入收件箱，未读角标提醒；`notification_queue` 指数退避 5m→30m→2h→6h 重试，30 天自动清理。详见 `docs/NOTIFICATIONS.md`。
 
 ### 提醒配置
 
@@ -330,9 +380,14 @@ TimeMark 支持 43+ 通知渠道，覆盖国内外主流通讯平台。所有渠
 | `NODE_ENV` | `production` | 运行环境 |
 | `JWT_SECRET` | 首次启动自动生成 | JWT 签名密钥，自动保存到 `data/.env` |
 | `MASTER_KEY` | 首次启动自动生成 | 主密钥（通知凭证 AES 加密），自动保存到 `data/.env` |
+| `CORS_ORIGIN` | 无（默认同 Host 放行） | 允许的前端源；**生产公网必填**自定义域名，逗号分隔 |
+| `TURNSTILE_SITE_KEY` | 无 | Cloudflare Turnstile 站点密钥（可选，可公开） |
+| `TURNSTILE_SECRET_KEY` | 无 | Turnstile 服务端密钥，**仅 Production 需要** |
 | `DEFAULT_ADMIN_USERNAME` | `admin` | 初始管理员用户名 |
 | `DEFAULT_ADMIN_PASSWORD` | `TimeMark@2026` | 初始管理员密码 |
 | `LOG_QUERIES` | `false` | 是否打印 SQL 查询日志（调试用） |
+
+> 🔐 **生产提示**：`CORS_ORIGIN` / `TURNSTILE_SECRET_KEY` 等敏感变量**仅 Production 需要配置**（Docker 单环境部署按生产原则即可；参考 vercel 仅 Production 勾选，避免泄露到预览）。FNOS 权限问题：取消 `docker-compose.yml` 中 `user: "0:0"` 注释以 root 运行（见 DEPLOYMENT.md FNOS 排查）。
 
 > 🔐 **密钥管理说明**：
 > - 首次启动时，系统会自动生成随机的 `JWT_SECRET` 和 `MASTER_KEY`
@@ -342,9 +397,9 @@ TimeMark 支持 43+ 通知渠道，覆盖国内外主流通讯平台。所有渠
 
 ---
 
-## 🛡️ 安全特性
+## 🛡️ 安全特性（v2.16.0 零信任加固）
 
-TimeMark v2.0 内置多层安全防护：
+TimeMark v2.16.0 内置多层安全防护：
 
 | 特性 | 说明 |
 |------|------|
@@ -357,6 +412,17 @@ TimeMark v2.0 内置多层安全防护：
 | **XSS 防护** | 输出转义 + 内容过滤，防止跨站脚本攻击 |
 | **密码加密** | bcrypt (cost=10) 哈希存储，不可逆 |
 | **凭证加密** | 通知渠道 API Key/Token 使用 AES-256 加密存储 |
+| **零信任网关** | 移除未验证 `X-API-Key` bypass，拦截扫描路径与恶意 UA |
+| **Passkey + Turnstile** | 密码与 Passkey 登录均强制人机验证；Turnstile 与 IP 封禁/锁定并行检查 |
+| **SSRF 防护** | 外部日历 URL 拉取前 `isSafePublicUrl()` 校验公网安全地址 |
+| **HSTS** | 响应头 `Strict-Transport-Security: max-age=31536000; includeSubDomains` |
+| **SMTP TLS** | 587 端口 `requireTLS: true`，465 使用 `secure: true` |
+| **CORS 收紧** | 禁止 `CORS_ORIGIN=*` 与 credentials 组合；生产建议填自定义域名 |
+| **密钥脱敏** | `GET /api/config/accounts` 不返回明文 token/secret，仅 `tokenConfigured` 标志 |
+| **发信白名单** | 快捷发信 `recipientEmails` 必须属于联系人邮箱列表，禁止任意中继 |
+| **单用户模式** | 固定个人单账户，禁止创建第二用户；会话令牌后台自动续期 |
+
+安全评估详见 `docs/SECURITY_AUDIT.md`（同步 vercel v2.16.0）。
 
 ---
 

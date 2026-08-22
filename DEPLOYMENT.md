@@ -2,9 +2,9 @@
 
 <div align="center">
 
-<h3>🎂 智能事件提醒系统 | 35+ 通知渠道 | 农历转换 | 关系映射</h3>
+<h3>🎂 智能事件提醒系统 | 43+ 通知渠道 | 农历转换 | 关系映射</h3>
 
-<p>本文档提供 TimeMark v2.4.2 的完整部署指南，涵盖各类 NAS 平台、公网服务器及本地环境。</p>
+<p>本文档提供 TimeMark <strong>v2.16.0</strong> 的完整部署指南，涵盖各类 NAS 平台、公网服务器及本地环境。同步 vercel v2.7–v2.16：双历/NTP/待办-Inbox/Integrations/Passkey · 零信任/SSRF/HSTS 加固。</p>
 
 </div>
 
@@ -12,7 +12,7 @@
 
 ## 📋 目录
 
-- [v2.4.2 新版特性](#-v242-新版特性)
+- [v2.16.0 新版特性](#-v2160-新版特性)
 - [部署前准备](#-部署前准备)
 - [镜像拉取方式](#-镜像拉取方式)
 - [快速部署](#-快速部署)
@@ -34,24 +34,24 @@
 
 ---
 
-## 🚀 v2.4.2 新版特性
+## 🚀 v2.16.0 新版特性（同步 vercel v2.7–v2.16）
 
 | 特性 | 说明 |
 |------|------|
 | **单容器部署** | 只需一个镜像，无需 PostgreSQL + Redis |
 | **内置数据库** | SQLite (sql.js) 自动初始化，开箱即用 |
 | **更轻量** | 内存占用从 ~800MB 降至 ~256MB |
-| **安全加固** | 登录锁定 + 安全告警 + 登录日志 + JWT + 限流 + CSRF + XSS 防护 |
-| **凭证加密** | 通知渠道 API Key/Token 使用 AES-256 加密存储 |
-| **多账户通知** | 同一渠道可配置多个账户，支持多邮箱 |
-| **零配置部署** | 所有环境变量内置默认值，`docker compose up -d` 即开即用 |
-| **35+ 通知渠道** | 新增 ClawBot/Server酱/PushPlus/Bark/Gotify/喵推送/PushMe/企微应用 共 8 个渠道 |
-| **通知模板预览** | 6 种预设模板按事件类型分组，支持自定义模板 |
-| **重复事件** | 支持每天/每周/每月/每年重复，自动创建下次事件 |
-| **ICS 日历导出** | Dashboard 一键导出 ICS 文件，支持 Google/Apple 日历 |
-| **更多事件类型** | 新增会议、截止日期、旅行、毕业、婚礼、医疗等 11 种类型 |
-| **调度器优化** | 每分钟检查提醒，更精准的时间匹配 |
-| **CSRF 保护** | 添加 Origin/Referer 头部验证中间件 |
+| **43+ 通知渠道** | 覆盖 IM/Webhook/移动推送/协议/插件；同渠道多账户 |
+| **Inbox 全链路** | 通知成功写入收件箱 + `notification_queue` 指数退避 5m→30m→2h→6h |
+| **Integrations** | 入站 Webhook / ICS 订阅 Feed / 外部 ICS 同步 / CalDAV |
+| **固定联系人** | 多邮箱/手机/Telegram/QQ/WxPusher 带标签（v30 `contact_methods` JSONB） |
+| **待办与完成历史** | 提醒窗口待办打勾完成（v29 `todo_completions`），过期自动移出，365 天清理 |
+| **日历三视图** | 年/月/日视图 + 公历/农历/双历精准同步与闰月修复 |
+| **时区与 NTP** | 默认 `Asia/Shanghai`，WorldTimeAPI/timeapi.io 校正漂移，按用户 IANA 时区 |
+| **零信任 & 安全** | 移除 X-API-Key bypass · Passkey 强制 Turnstile · SSRF `isSafePublicUrl` · HSTS · SMTP TLS 587 requireTLS |
+| **安全加固** | 登录锁定 + 安全告警 + 登录日志 + JWT + 限流 + CSRF + XSS · 密钥脱敏 `tokenConfigured` |
+| **通知模板** | 13 种预设 + 自定义模板，按事件类型分组 |
+| **ICS 日历** | Dashboard 一键导出 ICS，支持 Google/Apple Calendar 订阅 |
 
 ---
 
@@ -523,9 +523,14 @@ server {
 | `DEFAULT_ADMIN_USERNAME` | `admin` | 初始管理员用户名 |
 | `DEFAULT_ADMIN_PASSWORD` | `TimeMark@2026` | 初始管理员密码 |
 | `LOG_QUERIES` | `false` | 是否打印 SQL 查询日志（调试用） |
-| `CORS_ORIGIN` | 无（默认 localhost） | 允许的前端源，逗号分隔，如 `https://app.example.com,https://admin.example.com` |
+| `CORS_ORIGIN` | 无（默认 localhost + 同 Host 自动放行） | 允许的前端源，逗号分隔，如 `https://app.example.com`；**生产公网必填自定义域名** |
+| `TURNSTILE_SITE_KEY` | 无 | Cloudflare Turnstile 站点密钥（可选，可公开） |
+| `TURNSTILE_SECRET_KEY` | 无 | Turnstile 服务端密钥，**仅 Production 需要**（勿提交到 Git） |
+| `WEBAUTHN_RP_ID` | 无 | Passkey RP ID，与正式域名一致 |
+| `WEBAUTHN_ORIGIN` | 无 | Passkey Origin，如 `https://timemark.example.com` |
 
 > 💡 **公网部署建议**：自定义 `JWT_SECRET` 和 `MASTER_KEY` 以增强安全性。更换 MASTER_KEY 后，已加密的通知渠道凭证需要重新配置。
+> 🔐 **生产安全**：`CORS_ORIGIN` / `TURNSTILE_SECRET_KEY` 等敏感变量**仅 Production 需配置**（Docker 部署无需区分 Preview，但公网勿暴露默认密钥；参考 vercel 仅 Production 勾选原则）。
 
 ### v2.2.0 安全改进
 
