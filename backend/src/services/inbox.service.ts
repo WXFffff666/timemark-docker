@@ -126,7 +126,7 @@ export async function deleteInboxMessage(userId: number, messageId: number): Pro
 
 export async function purgeOldInboxMessages(): Promise<number> {
   const result = await query(
-    `DELETE FROM inbox_messages WHERE created_at < NOW() - INTERVAL '30 days'`,
+    `DELETE FROM inbox_messages WHERE created_at < datetime('now', '-30 days')`,
   );
   return result.rowCount ?? 0;
 }

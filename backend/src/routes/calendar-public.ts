@@ -49,10 +49,15 @@ async function resolveUserIdByFeedToken(token: string): Promise<number | null> {
   );
   if (legacy.rows.length) return legacy.rows[0].user_id as number;
 
+  // SQLite 等价于 PG 的 `calendar_feed_tokens @> '[{"token":x}]'::jsonb`：
+  // 数组中存在任一元素其 $.token 等于给定 token（元素可含其他键，语义一致）
   const multi = await query(
     `SELECT user_id FROM user_configs
-     WHERE calendar_feed_tokens @> $1::jsonb`,
-    [JSON.stringify([{ token }])],
+     WHERE EXISTS (
+       SELECT 1 FROM json_each(calendar_feed_tokens)
+       WHERE json_extract(value, '$.token') = $1
+     )`,
+    [token],
   );
   if (multi.rows.length) return multi.rows[0].user_id as number;
   return null;

@@ -300,9 +300,10 @@ export async function deleteFixedContact(userId: number, id: number) {
 
 export async function getContactsByIds(userId: number, ids: number[]): Promise<FixedContactRow[]> {
   if (ids.length === 0) return [];
+  const placeholders = ids.map((_, i) => `$${i + 2}`).join(', ');
   const result = await query(
-    `SELECT * FROM fixed_contacts WHERE user_id = $1 AND id = ANY($2::int[])`,
-    [userId, ids],
+    `SELECT * FROM fixed_contacts WHERE user_id = $1 AND id IN (${placeholders})`,
+    [userId, ...ids],
   );
   return result.rows.map(mapContactRow);
 }

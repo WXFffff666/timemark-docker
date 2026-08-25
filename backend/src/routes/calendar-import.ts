@@ -107,7 +107,7 @@ calendarImport.post('/feed-tokens', async (c) => {
   const existing = Array.isArray(row.rows[0]?.calendar_feed_tokens) ? row.rows[0].calendar_feed_tokens : [];
   const updated = [...existing, { name: String(name || `Feed ${existing.length + 1}`), token }].slice(0, 10);
   await query(
-    `UPDATE user_configs SET calendar_feed_tokens = $1::jsonb WHERE user_id = $2`,
+    `UPDATE user_configs SET calendar_feed_tokens = $1 WHERE user_id = $2`,
     [JSON.stringify(updated), Number(user.id)],
   );
   const host = c.req.header('Host') || 'localhost';
@@ -125,10 +125,10 @@ calendarImport.post('/integrations', async (c) => {
   if (urls) {
     await query(
       `INSERT INTO user_configs (user_id, external_calendar_urls, external_calendar_sync_strategy)
-       VALUES ($1, $2::jsonb, $3)
+       VALUES ($1, $2, $3)
        ON CONFLICT (user_id) DO UPDATE SET
-         external_calendar_urls = COALESCE($2::jsonb, user_configs.external_calendar_urls),
-         external_calendar_sync_strategy = COALESCE($3, user_configs.external_calendar_sync_strategy)`,
+         external_calendar_urls = COALESCE(excluded.external_calendar_urls, user_configs.external_calendar_urls),
+         external_calendar_sync_strategy = COALESCE(excluded.external_calendar_sync_strategy, user_configs.external_calendar_sync_strategy)`,
       [Number(user.id), JSON.stringify(urls), strategy],
     );
   } else if (body.externalCalendarSyncStrategy) {

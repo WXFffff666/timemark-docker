@@ -162,15 +162,17 @@ export async function sendReminders() {
   const allEventRows: any[] = [];
 
   if (enabledUserIds.length > 0) {
+    const userIdPlaceholders = enabledUserIds.map((_, i) => `$${i + 1}`).join(', ');
     const cacheRows = await query(
       `SELECT user_id, payload FROM event_reminder_cache
-       WHERE user_id = ANY($1::int[]) AND expires_at > NOW()`,
-      [enabledUserIds],
+       WHERE user_id IN (${userIdPlaceholders}) AND expires_at > datetime('now')`,
+      enabledUserIds,
     );
     const cachedUserIds = new Set<number>();
     for (const row of cacheRows.rows) {
       cachedUserIds.add(row.user_id as number);
-      const payload = row.payload;
+      // sql.js returns TEXT columns as strings — parse defensively
+      const payload = typeof row.payload === 'string' ? (() => { try { return JSON.parse(row.payload as string); } catch { return null; } })() : row.payload;
       if (!Array.isArray(payload)) continue;
       for (const ev of payload) {
         const id = (ev as { id?: number }).id;
@@ -183,17 +185,19 @@ export async function sendReminders() {
 
     // 旧缓存可能只含 7 天窗口；补全年重复事件（生日等存历史年份）
     if (cachedUserIds.size > 0) {
+      const cachedIds = [...cachedUserIds];
+      const cachedPlaceholders = cachedIds.map((_, i) => `$${i + 1}`).join(', ');
       const supplemental = await query(
-        `SELECT * FROM events WHERE user_id = ANY($1::int[])
+        `SELECT * FROM events WHERE user_id IN (${cachedPlaceholders})
          AND (
            type IN ('birthday', 'anniversary')
            OR (
              recurring_config IS NOT NULL
-             AND recurring_config::jsonb->>'enabled' = 'true'
-             AND recurring_config::jsonb->>'frequency' = 'yearly'
+             AND json_extract(recurring_config, '$.enabled') = 'true'
+             AND json_extract(recurring_config, '$.frequency') = 'yearly'
            )
          )`,
-        [[...cachedUserIds]],
+        cachedIds,
       );
       for (const ev of supplemental.rows) {
         if (!eventIdSet.has(ev.id)) {
@@ -205,7 +209,8 @@ export async function sendReminders() {
 
     const uncachedUserIds = enabledUserIds.filter((id) => !cachedUserIds.has(id));
     if (uncachedUserIds.length > 0) {
-      const fallback = await query('SELECT * FROM events WHERE user_id = ANY($1::int[])', [uncachedUserIds]);
+      const uncachedPlaceholders = uncachedUserIds.map((_, i) => `$${i + 1}`).join(', ');
+      const fallback = await query(`SELECT * FROM events WHERE user_id IN (${uncachedPlaceholders})`, uncachedUserIds);
       for (const ev of fallback.rows) {
         if (!eventIdSet.has(ev.id)) {
           eventIdSet.add(ev.id);
@@ -218,10 +223,10 @@ export async function sendReminders() {
     }
 
     const lunarRows = await query(
-      `SELECT * FROM events WHERE user_id = ANY($1::int[])
+      `SELECT * FROM events WHERE user_id IN (${userIdPlaceholders})
        AND lunar_date IS NOT NULL
        AND calendar_type IN ('lunar', 'both')`,
-      [enabledUserIds],
+      enabledUserIds,
     );
     for (const ev of lunarRows.rows) {
       if (!eventIdSet.has(ev.id)) {
@@ -461,18 +466,18 @@ export async function archiveLoginHistory() {
 
 export async function cleanupSessions() {
   log.info('Cleaning up expired sessions...');
-  const result = await query("DELETE FROM sessions WHERE expires_at < NOW()");
+  const result = await query("DELETE FROM sessions WHERE expires_at < datetime('now')");
   log.info({ count: result.rowCount ?? 0 }, 'Cleaned up expired sessions');
-  
+
   // 清理30天前的登录日志
   const loginLogsResult = await query(
-    "DELETE FROM login_logs WHERE login_time < NOW() - INTERVAL '30 days'"
+    "DELETE FROM login_logs WHERE login_time < datetime('now','-30 days')"
   );
   log.info({ count: loginLogsResult.rowCount ?? 0 }, 'Cleaned up old login logs');
-  
-  // 清理30天前的事件触发日志
+
+  // 清理30天前的记录触发日志
   const triggerResult = await query(
-    "DELETE FROM event_trigger_logs WHERE created_at < NOW() - INTERVAL '30 days'"
+    "DELETE FROM event_trigger_logs WHERE created_at < datetime('now','-30 days')"
   );
   log.info({ count: triggerResult.rowCount ?? 0 }, 'Cleaned up old event trigger logs');
 }
