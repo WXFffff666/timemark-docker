@@ -4,6 +4,8 @@ import { serveStatic } from '@hono/node-server/serve-static';
 import { cors } from 'hono/cors';
 import { logger as honoLogger } from 'hono/logger';
 import { requestIdMiddleware } from './middleware/request-id.js';
+import { zeroTrustGuard } from './middleware/zero-trust-guard.js';
+import { httpsEnforcement } from './middleware/https-enforcement.js';
 import { securityHeaders } from './middleware/security-headers.js';
 import { csrfProtection } from './middleware/csrf.js';
 import { getConfiguredOrigins, originMatchesHost } from './utils/allowed-origins.js';
@@ -25,6 +27,14 @@ import pushRoutes from './routes/push.js';
 import todosRoutes from './routes/todos.js';
 import timeRoutes from './routes/time.js';
 import webauthnRoutes from './routes/webauthn.js';
+import contactsRoutes from './routes/contacts.js';
+import inboxRoutes from './routes/inbox.js';
+import inboxPublicRoutes from './routes/inbox-public.js';
+import webhookInboundRoutes from './routes/webhook-inbound.js';
+import calendarImportRoutes from './routes/calendar-import.js';
+import calendarPublicRoutes from './routes/calendar-public.js';
+import triggerLogRoutes from './routes/trigger-logs.js';
+import dataRoutes from './routes/data.js';
 import { startScheduler, stopScheduler } from './queue/scheduler.js';
 
 const log = createLogger('bootstrap');
@@ -51,7 +61,7 @@ async function bootstrap() {
   const userResult = await query('SELECT id FROM users LIMIT 1');
   if (userResult.rows.length === 0) {
     const username = process.env.DEFAULT_ADMIN_USERNAME || 'admin';
-    const password = process.env.DEFAULT_ADMIN_PASSWORD || 'admin123';
+    const password = process.env.DEFAULT_ADMIN_PASSWORD || 'TimeMark@2026';
     const passwordHash = await hashPassword(password);
 
     await query(
@@ -70,7 +80,9 @@ async function bootstrap() {
   const app = new Hono();
 
   app.use('*', honoLogger());
+  app.use('*', zeroTrustGuard);
   app.use('*', securityHeaders);
+  app.use('/api/*', httpsEnforcement);
   // CORS: 允许精确白名单 + 同 Host Origin（LAN IP:端口 无需手动 CORS_ORIGIN）
   const corsAllowList = getConfiguredOrigins();
   const isCorsOriginAllowed = (origin: string, host: string | undefined) => {
@@ -108,6 +120,15 @@ async function bootstrap() {
   app.route('/api/todos', todosRoutes);
   app.route('/api/time', timeRoutes);
   app.route('/api/auth/webauthn', webauthnRoutes);
+  // v2.16.0 ported routers (previously unmounted — Inbox/Contacts/ICS feed/Webhook were 404)
+  app.route('/api/calendar', calendarImportRoutes);
+  app.route('/api/calendar', calendarPublicRoutes);
+  app.route('/api/contacts', contactsRoutes);
+  app.route('/api/webhook', webhookInboundRoutes);
+  app.route('/api/inbox', inboxRoutes);
+  app.route('/api/inbox', inboxPublicRoutes);
+  app.route('/api/trigger-logs', triggerLogRoutes);
+  app.route('/api/data', dataRoutes);
 
   app.get('/health', (c) => c.json({ status: 'ok' }));
 
