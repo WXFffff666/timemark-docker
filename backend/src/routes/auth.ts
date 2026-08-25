@@ -337,7 +337,7 @@ auth.post('/refresh', async (c) => {
     setAccessCookie(c, accessToken, rememberMe);
     setRefreshCookie(c, newRefreshToken, rememberMe);
 
-    return c.json({ success: true, data: { user, authMode: 'cookie' } });
+    return c.json({ success: true, data: { user, authMode: 'cookie', accessToken } });
   } catch (error: any) {
     console.error('[Refresh Token Error]', error);
     return c.json({ success: false, error: error.message || 'Failed to refresh token' }, 500);
