@@ -251,7 +251,7 @@ Cron 每分钟提醒使用校正后的时间，在配置的提醒时刻 ±2 分�
 
 ### Inbox 全链路
 
-通知成功写入收件箱，未读角标提醒；`notification_queue` 指数退避 5m→30m→2h→6h 重试，30 天自动清理。详见 `docs/NOTIFICATIONS.md`。
+通知成功写入收件箱，未读角标提醒；服务端已内置 `notification_queue` 指数退避（5m→30m→2h→6h）重试与 30 天清理任务。注意：当前版本发送端尚未在失败时自动入队（与 vercel 版一致），队列机制为后续版本启用预留。详见 `docs/NOTIFICATIONS.md`。
 
 ### 提醒配置
 
@@ -387,7 +387,7 @@ TimeMark 支持 43+ 通知渠道，覆盖国内外主流通讯平台。所有渠
 | `DEFAULT_ADMIN_PASSWORD` | `TimeMark@2026` | 初始管理员密码 |
 | `LOG_QUERIES` | `false` | 是否打印 SQL 查询日志（调试用） |
 
-> 🔐 **生产提示**：`CORS_ORIGIN` / `TURNSTILE_SECRET_KEY` 等敏感变量**仅 Production 需要配置**（Docker 单环境部署按生产原则即可；参考 vercel 仅 Production 勾选，避免泄露到预览）。FNOS 权限问题：取消 `docker-compose.yml` 中 `user: "0:0"` 注释以 root 运行（见 DEPLOYMENT.md FNOS 排查）。
+> 🔐 **生产提示**：`CORS_ORIGIN` / `TURNSTILE_SECRET_KEY` 等敏感变量**仅 Production 需要配置**（Docker 单环境部署按生产原则即可；参考 vercel 仅 Production 勾选，避免泄露到预览）。FNOS 权限问题：v2.16 修复后容器入口会在 root 运行时自动修复挂载目录属主并降权到 app 用户；如仍遇权限问题，可取消 `docker-compose.yml` 中 `user: "0:0"` 注释以 root 运行（见 DEPLOYMENT.md FNOS 排查）。
 
 > 🔐 **密钥管理说明**：
 > - 首次启动时，系统会自动生成随机的 `JWT_SECRET` 和 `MASTER_KEY`
