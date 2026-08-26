@@ -1,3 +1,7 @@
+/* DEAD CODE: PostgreSQL-only rate limiter kept for reference. Zero callers in this
+ * SQLite/sql.js deployment (middleware/rate-limit.ts is the active limiter). Do NOT wire
+ * this in without a full dialect rewrite.
+ */
 import { query } from '../db/index.js';
 
 /** PostgreSQL-backed fixed-window rate limiter (serverless-safe). */
