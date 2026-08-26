@@ -13,7 +13,13 @@ export interface TokenPayload {
 }
 
 function resolveSecret(secret?: string): string {
-  return secret || process.env.JWT_SECRET || DEFAULT_JWT_SECRET;
+  const resolved = secret || process.env.JWT_SECRET || DEFAULT_JWT_SECRET;
+  // 生产环境禁止静默使用公开的默认密钥（vercel 同款加固）。
+  // 正常启动路径中 initSecretKeys() 会先生成并写入随机 JWT_SECRET，因此不受影响。
+  if (process.env.NODE_ENV === 'production' && (!resolved || resolved === DEFAULT_JWT_SECRET || resolved.length < 32)) {
+    throw new Error('JWT_SECRET is missing or too weak for production — refusing to sign tokens with a publicly-known default');
+  }
+  return resolved;
 }
 
 export async function generateAccessToken(userId: string, sessionToken?: string, rememberMe: boolean = false, secret?: string): Promise<string> {

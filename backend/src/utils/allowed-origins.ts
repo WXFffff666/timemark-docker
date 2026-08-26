@@ -15,13 +15,9 @@ export function getConfiguredOrigins(): string[] {
     origins.push(...corsOrigin.split(',').map((o) => o.trim()).filter(Boolean));
   }
 
-  // Docker: no Vercel preview logic; optional canonical fallback like vercel
-  // (kept so CORS_ORIGIN 未配置时，公网域名仍在白名单；LAN 场景由 originMatchesHost 覆盖)
-  if (!corsOrigin && !origins.includes(CANONICAL_ORIGIN)) {
-    // 仅当非本地开发且未配置时，兜底加入 canonical（与 vercel 一致，可选）
-    // Docker 本地/NAS 场景虽然不会命中该域名，但保留不影响 LAN 逻辑
-    origins.push(CANONICAL_ORIGIN);
-  }
+  // Docker/NAS 默认只信任本地回环 + 同 Host（originMatchesHost 覆盖 LAN 访问）；
+  // 不再把作者个人域名硬编码进所有部署的默认允许列表。
+  // 需要额外公网来源时，通过 CORS_ORIGIN 显式配置。
 
   return [...new Set(origins)];
 }
@@ -73,7 +69,8 @@ export function resolveSafeAppOrigin(
       return candidate;
     }
   }
-  return CANONICAL_ORIGIN;
+  // 不再把作者个人域名作为通用兜底；无法解析时退回本地默认。
+  return 'http://localhost:3000';
 }
 
 export function resolveCorsOrigin(origin: string | undefined, host: string | undefined): string {

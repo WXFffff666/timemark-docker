@@ -41,11 +41,6 @@ export function csrfProtection() {
       }
     }
 
-    const apiKeyHeader = c.req.header('X-API-Key');
-    if (apiKeyHeader) {
-      return next();
-    }
-
     const hasCustomHeader = c.req.header('X-Requested-With') === 'XMLHttpRequest';
 
     if (!requestOrigin) {

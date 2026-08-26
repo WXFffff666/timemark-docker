@@ -1,5 +1,4 @@
 import type { Context } from 'hono';
-import { CANONICAL_ORIGIN } from './allowed-origins.js';
 
 export interface WebAuthnRuntimeConfig {
   rpID: string;
@@ -26,7 +25,9 @@ export function resolveRequestOrigin(c: Context): string {
     return `${proto}://${host}`;
   }
 
-  return process.env.WEBAUTHN_ORIGIN || CANONICAL_ORIGIN;
+  // 最后一道兜底（正常都会命中上面的 Origin/Referer/Host 推导）。
+  // 不再把作者个人域名作为所有部署的默认 Passkey 来源；需要固定来源时设置 WEBAUTHN_ORIGIN。
+  return process.env.WEBAUTHN_ORIGIN || 'http://localhost:3000';
 }
 
 export function getWebAuthnConfig(c: Context): WebAuthnRuntimeConfig {
