@@ -1,6 +1,9 @@
 {
   "name": "@timemark/backend",
   "version": "2.16.0",
+  "engines": {
+    "node": ">=22"
+  },
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
