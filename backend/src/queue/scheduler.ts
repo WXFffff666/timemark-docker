@@ -3,6 +3,7 @@ import { sendReminders, githubBackup, archiveLoginHistory, cleanupSessions } fro
 import { query } from '../db/index.js';
 import { createLogger } from '../utils/logger.js';
 import { purgeOldTodoCompletions } from '../services/todo.service.js';
+import { processNotificationRetries, purgeOldQueueEntries } from '../services/notification-retry.service.js';
 
 const log = createLogger('scheduler');
 
@@ -87,6 +88,22 @@ export async function startScheduler(): Promise<void> {
     await runJob('daily-todo-purge', async () => {
       const count = await purgeOldTodoCompletions(365);
       log.info({ count }, 'Purged old todo completions');
+    });
+  }));
+
+  // 每 5 分钟处理通知重试队列（指数退避由队列的 next_retry_at 控制）
+  jobs.push(new Cron('*/5 * * * *', { timezone: 'Asia/Shanghai', name: 'notification-retry' }, async () => {
+    await runJob('notification-retry', async () => {
+      const r = await processNotificationRetries();
+      log.info({ processed: r.processed, succeeded: r.succeeded }, 'Processed notification retries');
+    });
+  }));
+
+  // 每天凌晨 5 点清理 30 天前的通知队列记录
+  jobs.push(new Cron('0 5 * * *', { timezone: 'Asia/Shanghai', name: 'notification-queue-purge' }, async () => {
+    await runJob('notification-queue-purge', async () => {
+      const count = await purgeOldQueueEntries();
+      log.info({ count }, 'Purged old notification queue entries');
     });
   }));
 
