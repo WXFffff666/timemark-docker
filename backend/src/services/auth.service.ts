@@ -286,7 +286,7 @@ export async function evaluateIpBlock(ip: string): Promise<void> {
     `SELECT COUNT(*)::int AS count FROM login_logs
      WHERE ip_address = $1 AND success = FALSE
        AND COALESCE(failure_reason, '') NOT IN ('turnstile_failed', 'locked_attempt', 'totp_invalid')
-       AND login_time > NOW() - INTERVAL '1 hour'`,
+       AND login_time > datetime('now', '-1 hour')`,
     [ip],
   );
   const count = countResult.rows[0]?.count ?? 0;
