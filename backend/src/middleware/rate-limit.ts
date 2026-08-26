@@ -91,5 +91,7 @@ export const authRateLimit = rateLimit(15, 60 * 1000);
  */
 export const apiRateLimit = rateLimit(100, 60 * 1000);
 
-export const loginRateLimit = rateLimit(15, 60 * 1000);
-export const authMutationRateLimit = rateLimit(15, 60 * 1000);
+// 登录/认证变更限流与 authRateLimit 共享同一桶（vercel 语义），
+// 各建实例会导致同路径有效预算翻倍。
+export const loginRateLimit = authRateLimit;
+export const authMutationRateLimit = authRateLimit;
