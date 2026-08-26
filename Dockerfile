@@ -27,7 +27,8 @@ FROM node:22-alpine
 
 # icu-data-full: Required for correct Chinese date formatting (Intl.DateTimeFormat)
 # dumb-init: Proper PID 1 signal handling in containers
-RUN apk add --no-cache dumb-init ca-certificates icu-data-full
+# su-exec: drop privileges after entrypoint ownership self-heal (root-run NAS case)
+RUN apk add --no-cache dumb-init su-exec ca-certificates icu-data-full
 
 WORKDIR /app
 
@@ -58,11 +59,14 @@ COPY frontend/dist ./frontend/dist
 # Copy schema for database initialization
 COPY docker/schema.sql ./docker/schema.sql
 
-# Create data directory with correct permissions for non-root user
-# chmod 777 兜底：FNOS 1.1.3107 等 NAS 宿主机卷以 root 创建，容器内 app(非 root) 会 EACCES；
-# 777 保证任何挂载属主下均可写入，仍默认以 USER app 运行（非强制 root）。
-# 若仍权限不足，可在 compose 中取消注释 user: "0:0" 以 root 运行容器。
-RUN mkdir -p /app/data && chown -R app:app /app && chmod -R 777 /app/data
+# Create data directory owned by the non-root user (no world-writable modes —
+# this directory holds timemark.db and data/.env secrets).
+# Bind-mount ownership (FNOS/NAS root-owned volumes) is self-healed at container
+# start by docker/entrypoint.sh (chown as root, then drop to app via su-exec).
+RUN mkdir -p /app/data && chown -R app:app /app
+
+COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
 
 EXPOSE 3000
 
@@ -72,4 +76,5 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
 # Switch to non-root user
 USER app
 
-CMD ["dumb-init", "node", "./backend/dist/backend/src/index.js"]
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["node", "./backend/dist/backend/src/index.js"]
