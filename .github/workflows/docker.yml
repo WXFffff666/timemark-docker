@@ -63,7 +63,7 @@ jobs:
         with:
           images: |
             xfffff666/timemark
-            ghcr.io/WXFffff666/timemark
+            ghcr.io/${{ steps.owner.outputs.owner }}/timemark
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
