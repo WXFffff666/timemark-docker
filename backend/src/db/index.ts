@@ -8,6 +8,8 @@ export type QueryResult = {
   lastInsertRowid?: number;
 };
 
+export type QueryStatement = { text: string; params?: any[] };
+
 const DB_PATH = process.env.DB_PATH || './data/timemark.db';
 const resolvedDbPath = path.resolve(DB_PATH);
 const dataDir = path.dirname(resolvedDbPath);
@@ -192,6 +194,36 @@ export async function query(text: string, params: any[] = []): Promise<QueryResu
   } catch (error) {
     if (LOG_QUERIES) {
       console.error('Query failed', { text, params, error });
+    }
+    throw error;
+  }
+}
+
+/** Execute mutation statements atomically against the SQLite database. */
+export async function queryTransaction(statements: QueryStatement[]): Promise<QueryResult[]> {
+  await waitForDb();
+  if (statements.length === 0) return [];
+
+  const database = getDb();
+  database.exec('BEGIN TRANSACTION');
+  try {
+    const results = statements.map(({ text, params = [] }) => {
+      const sqliteText = convertPgParamsToSqlite(text);
+      if (isRowReturningQuery(sqliteText)) {
+        throw new Error('queryTransaction only supports mutation statements');
+      }
+      database.run(sqliteText, params);
+      return { rows: [], rowCount: database.getRowsModified() };
+    });
+
+    database.exec('COMMIT');
+    debouncedSave();
+    return results;
+  } catch (error) {
+    try {
+      database.exec('ROLLBACK');
+    } catch {
+      // Preserve the original statement/commit error.
     }
     throw error;
   }

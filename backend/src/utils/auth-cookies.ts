@@ -1,27 +1,14 @@
 import type { Context } from 'hono';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
+import { isRequestHttps } from './client-ip.js';
 
 const ACCESS_COOKIE = 'timemark_access';
 const REFRESH_COOKIE = 'timemark_refresh';
 
-/**
- * secure 不能只看 NODE_ENV：容器内恒为 production，而 NAS/LAN 常以纯 HTTP 访问，
- * 带 Secure 的 Cookie 会被浏览器直接丢弃。按真实请求协议（X-Forwarded-Proto）判定。
- */
-function isHttpsRequest(c: Context): boolean {
-  const proto = c.req.header('x-forwarded-proto');
-  if (proto) return proto.split(',')[0].trim() === 'https';
-  try {
-    return new URL(c.req.url).protocol === 'https:';
-  } catch {
-    return false;
-  }
-}
-
 function cookieOpts(c: Context) {
   return {
     httpOnly: true,
-    secure: isHttpsRequest(c) || !!process.env.VERCEL,
+    secure: isRequestHttps(c),
     sameSite: 'Lax' as const,
     path: '/',
   };

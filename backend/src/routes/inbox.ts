@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 import type { User } from '@timemark/shared';
+import { getRequestOrigin } from '../utils/client-ip.js';
 import {
   listInboxMessages,
   markInboxRead,
@@ -25,10 +26,9 @@ inbox.get('/', async (c) => {
 inbox.get('/info', async (c) => {
   const userId = Number(c.get('user').id);
   const tokens = await getInboxReceiveTokens(userId);
-  const host = c.req.header('Host') || 'localhost';
-  const protocol = c.req.header('X-Forwarded-Proto') || 'https';
+  const origin = getRequestOrigin(c);
   const receiveUrl = tokens.inboxReceiveToken
-    ? `${protocol}://${host}/api/inbox/receive/${tokens.inboxReceiveToken}`
+    ? `${origin}/api/inbox/receive/${tokens.inboxReceiveToken}`
     : null;
 
   return c.json({

@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 import { getEventsByUserId } from '../services/event.service.js';
 import type { User } from '@timemark/shared';
+import { getRequestOrigin } from '../utils/client-ip.js';
 
 const calendar = new Hono<{ Variables: { user: User } }>();
 
@@ -69,9 +70,9 @@ calendar.get('/apple', async (c) => {
 
   // Apple Calendar 使用 webcal:// 协议订阅
   // 这里返回 .ics 文件的 URL，用户可以订阅
-  const host = c.req.header('Host') || 'localhost:3000';
-  const protocol = c.req.header('X-Forwarded-Proto') || 'http';
-  const icsUrl = `${protocol}://${host}/api/calendar/export.ics`;
+  const origin = getRequestOrigin(c);
+  const host = new URL(origin).host;
+  const icsUrl = `${origin}/api/calendar/export.ics`;
 
   return c.json({
     success: true,

@@ -1,17 +1,7 @@
 import type { Context, Next } from 'hono';
+import { isRequestHttps } from '../utils/client-ip.js';
 
 const ROBOTS_TAG = 'noindex, nofollow, noarchive, nosnippet, noimageai, noai';
-
-/** 判断请求是否真的走了 HTTPS（反代 X-Forwarded-Proto 优先），而不是只看 NODE_ENV。 */
-function isHttpsRequest(c: Context): boolean {
-  const proto = c.req.header('x-forwarded-proto');
-  if (proto) return proto.split(',')[0].trim() === 'https';
-  try {
-    return new URL(c.req.url).protocol === 'https:';
-  } catch {
-    return false;
-  }
-}
 
 export async function securityHeaders(c: Context, next: Next) {
   await next();
@@ -23,7 +13,7 @@ export async function securityHeaders(c: Context, next: Next) {
   c.header('X-Robots-Tag', ROBOTS_TAG);
   c.header('Cross-Origin-Opener-Policy', 'same-origin');
 
-  const https = isHttpsRequest(c);
+  const https = isRequestHttps(c);
   // HSTS 只在真实 HTTPS 响应上发送；HTTP LAN/NAS 部署发送 HSTS 反而有害。
   if (https && (process.env.NODE_ENV === 'production' || process.env.VERCEL)) {
     c.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');

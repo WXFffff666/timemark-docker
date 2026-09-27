@@ -651,7 +651,7 @@ export NODE_ENV=development
 export JWT_SECRET=$(openssl rand -hex 32)
 export MASTER_KEY=$(openssl rand -hex 32)
 export DEFAULT_ADMIN_USERNAME=admin
-export DEFAULT_ADMIN_PASSWORD=dev123456
+export DEFAULT_ADMIN_PASSWORD="$(openssl rand -hex 32)"
 ```
 
 ---
@@ -669,15 +669,17 @@ export DEFAULT_ADMIN_PASSWORD=dev123456
 | `docker-compose.full.yml` | 公网服务器 | GHCR |
 | `docker-compose.yml` | 本地开发 | 本地构建 |
 
-### 环境变量（全部可选）
+### 环境变量
 
-> ✅ 所有环境变量均有内置默认值，不设置也能正常使用。公网部署建议自定义 `JWT_SECRET` 和 `MASTER_KEY`。
+> 空数据库首次创建管理员必须设置 `DEFAULT_ADMIN_PASSWORD`；生产环境默认要求 HTTPS。局域网 HTTP 需显式启用。
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `JWT_SECRET` | 内置默认值 | JWT 签名密钥，公网部署建议自定义 |
 | `MASTER_KEY` | 内置默认值 | 主密钥（通知凭证 AES 加密），公网部署建议自定义 |
-| `DEFAULT_ADMIN_PASSWORD` | `TimeMark@2026` | 初始管理员密码，登录后可修改 |
+| `DEFAULT_ADMIN_PASSWORD` | 无；首次创建管理员必填 | 初始管理员密码，不存在硬编码回退 |
+| `ALLOW_INSECURE_HTTP` | `false` | 仅可信局域网显式设为 `true` 才允许明文 HTTP |
+| `TRUSTED_PROXIES` | 无 | 可信代理 IP/CIDR 列表；其余请求头中的客户端 IP/协议不可信 |
 
 详细部署步骤请参考 [DEPLOYMENT.md](DEPLOYMENT.md)。
 

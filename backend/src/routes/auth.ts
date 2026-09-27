@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { Hono } from 'hono';
 import { verifyUserForLogin, getUserByUsername, createLoginLog, trackLoginFailure, getAccountLockStatus, clearAccountLock, getIpBlockStatus, evaluateIpBlock, checkIpWhitelistFromUser, verifyTotpCode, verifyUserPassword } from '../services/auth.service.js';
 import { getClientIp, getClientIpInfo } from '../utils/client-ip.js';
@@ -5,7 +6,7 @@ import { getTurnstileSiteKey, isTurnstileEnabled, verifyTurnstileToken } from '.
 import { isSafePublicUrl } from '../utils/url-safety.js';
 import { lookupGeoLabel } from '../utils/geoip.js';
 import { logSecurityEvent } from '../services/security-event.service.js';
-import { createSession, deleteSession, deleteAllUserSessions, getSessionByToken } from '../services/session.service.js';
+import { createSession, deleteSession, deleteAllUserSessions, getSessionByToken, rotateSessionRefreshToken } from '../services/session.service.js';
 import { generateAccessToken, generateRefreshToken, verifyToken } from '../utils/jwt.js';
 import { loginSchema, changePasswordSchema } from '@timemark/shared';
 import { authMiddleware } from '../middleware/auth.middleware.js';
@@ -195,7 +196,7 @@ auth.post('/verify-device', authMiddleware, async (c) => {
   const bearer = c.req.header('Authorization')?.replace('Bearer ', '');
   const accessToken = bearer || getAccessTokenFromCookie(c);
   const payload = accessToken ? await verifyToken(accessToken) : null;
-  if (!payload?.sessionToken) {
+  if (payload?.tokenUse !== 'access' || !payload.sessionToken) {
     return c.json({ success: true, data: { trusted: false } });
   }
 
@@ -219,20 +220,20 @@ auth.post('/logout', authMiddleware, async (c) => {
     const bearer = c.req.header('Authorization')?.replace('Bearer ', '');
     if (bearer) {
       const payload = await verifyToken(bearer);
-      sessionToken = payload?.sessionToken;
+      if (payload?.tokenUse === 'access') sessionToken = payload.sessionToken;
     }
     if (!sessionToken) {
       const accessToken = getAccessTokenFromCookie(c);
       if (accessToken) {
         const payload = await verifyToken(accessToken);
-        sessionToken = payload?.sessionToken;
+        if (payload?.tokenUse === 'access') sessionToken = payload.sessionToken;
       }
     }
     if (!sessionToken) {
       const refreshToken = getRefreshTokenFromCookie(c);
       if (refreshToken) {
         const payload = await verifyToken(refreshToken);
-        sessionToken = payload?.sessionToken;
+        if (payload?.tokenUse === 'refresh') sessionToken = payload.sessionToken;
       }
     }
     if (sessionToken) {
@@ -278,7 +279,8 @@ auth.post('/change-password', authMiddleware, authMutationRateLimit, async (c) =
 
     const bearer = c.req.header('Authorization')?.replace('Bearer ', '');
     const currentPayload = bearer ? await verifyToken(bearer) : null;
-    await deleteAllUserSessions(user.id, currentPayload?.sessionToken);
+    const currentSessionToken = currentPayload?.tokenUse === 'access' ? currentPayload.sessionToken : undefined;
+    await deleteAllUserSessions(user.id, currentSessionToken);
 
     await sendSecurityAlert({
       userId: Number(user.id),
@@ -309,7 +311,7 @@ auth.post('/refresh', async (c) => {
 
     // Verify refresh token
     const payload = await verifyToken(refreshToken);
-    if (!payload) {
+    if (!payload || payload.tokenUse !== 'refresh' || !payload.refreshTokenId) {
       return c.json({ success: false, error: 'Invalid or expired refresh token' }, 401);
     }
 
@@ -331,13 +333,22 @@ auth.post('/refresh', async (c) => {
     const sessionMs = new Date(session.expiresAt).getTime() - Date.now();
     const rememberMe = sessionMs > 24 * 60 * 60 * 1000;
 
+    const nextRefreshTokenId = randomUUID();
     const accessToken = await generateAccessToken(user.id, payload.sessionToken, rememberMe);
-    const newRefreshToken = await generateRefreshToken(user.id, payload.sessionToken);
+    const newRefreshToken = await generateRefreshToken(user.id, payload.sessionToken, nextRefreshTokenId);
+    const rotated = await rotateSessionRefreshToken(
+      payload.sessionToken,
+      payload.refreshTokenId,
+      nextRefreshTokenId,
+    );
+    if (!rotated) {
+      return c.json({ success: false, error: 'Refresh token is invalid or already used' }, 401);
+    }
 
     setAccessCookie(c, accessToken, rememberMe);
     setRefreshCookie(c, newRefreshToken, rememberMe);
 
-    return c.json({ success: true, data: { user, authMode: 'cookie', accessToken } });
+    return c.json({ success: true, data: { user, authMode: 'cookie' } });
   } catch (error: any) {
     console.error('[Refresh Token Error]', error);
     return c.json({ success: false, error: error.message || 'Failed to refresh token' }, 500);

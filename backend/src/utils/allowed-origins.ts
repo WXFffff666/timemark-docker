@@ -2,6 +2,24 @@
 
 export const CANONICAL_ORIGIN = 'https://timemark.the37777777.top';
 
+function normalizeHttpOrigin(value: string): string | null {
+  if (value.includes('*')) return null;
+  try {
+    const url = new URL(value);
+    if ((url.protocol !== 'http:' && url.protocol !== 'https:')
+      || url.username
+      || url.password
+      || url.pathname !== '/'
+      || url.search
+      || url.hash) {
+      return null;
+    }
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
 export function getConfiguredOrigins(): string[] {
   const origins: string[] = [
     'http://localhost:3000',
@@ -11,11 +29,16 @@ export function getConfiguredOrigins(): string[] {
   ];
 
   const corsOrigin = process.env.CORS_ORIGIN;
-  if (corsOrigin && corsOrigin !== '*') {
-    origins.push(...corsOrigin.split(',').map((o) => o.trim()).filter(Boolean));
+  if (corsOrigin) {
+    // Cookie-auth responses cannot safely authorize every origin.
+    origins.push(
+      ...corsOrigin.split(',')
+        .map((origin) => normalizeHttpOrigin(origin.trim()))
+        .filter((origin): origin is string => origin !== null),
+    );
   }
 
-  // Docker/NAS 默认只信任本地回环 + 同 Host（originMatchesHost 覆盖 LAN 访问）；
+  // Docker/NAS 默认只信任本地回环 + 与请求 origin 完全一致（覆盖 LAN 访问）；
   // 不再把作者个人域名硬编码进所有部署的默认允许列表。
   // 需要额外公网来源时，通过 CORS_ORIGIN 显式配置。
 
@@ -29,32 +52,26 @@ export function isVercelAppOrigin(origin: string): boolean {
   return /^https:\/\/[\w-]+\.vercel\.app$/.test(origin);
 }
 
-export function originMatchesHost(origin: string, host: string | undefined): boolean {
-  if (!host) return false;
-  try {
-    const url = new URL(origin);
-    return url.host === host;
-  } catch {
-    return false;
-  }
+export function originMatchesRequest(
+  origin: string,
+  requestOrigin: string | undefined,
+): boolean {
+  if (!requestOrigin) return false;
+  const normalizedOrigin = normalizeHttpOrigin(origin);
+  const normalizedRequestOrigin = normalizeHttpOrigin(requestOrigin);
+  return normalizedOrigin !== null && normalizedOrigin === normalizedRequestOrigin;
 }
 
 export function isAllowedOrigin(
   origin: string | undefined,
-  host: string | undefined,
+  requestOrigin: string | undefined,
   allowedOrigins: string[],
 ): boolean {
-  if (!origin) return false;
-  if (allowedOrigins.includes('*')) return true;
-  if (originMatchesHost(origin, host)) return true;
-
-  return allowedOrigins.some((allowed) => {
-    if (origin === allowed) return true;
-    if (allowed.startsWith('*.')) {
-      return origin.endsWith(allowed.slice(2));
-    }
-    return false;
-  });
+  if (!origin || allowedOrigins.includes('*')) return false;
+  const normalizedOrigin = normalizeHttpOrigin(origin);
+  if (!normalizedOrigin) return false;
+  if (originMatchesRequest(origin, requestOrigin)) return true;
+  return allowedOrigins.includes(normalizedOrigin);
 }
 
 export function resolveSafeAppOrigin(
@@ -65,7 +82,7 @@ export function resolveSafeAppOrigin(
   const h = host?.trim();
   if (h) {
     const candidate = `${proto}://${h}`;
-    if (isAllowedOrigin(candidate, h, getConfiguredOrigins())) {
+    if (isAllowedOrigin(candidate, candidate, getConfiguredOrigins())) {
       return candidate;
     }
   }
@@ -73,9 +90,9 @@ export function resolveSafeAppOrigin(
   return 'http://localhost:3000';
 }
 
-export function resolveCorsOrigin(origin: string | undefined, host: string | undefined): string {
+export function resolveCorsOrigin(origin: string | undefined, requestOrigin: string | undefined): string {
   const allowed = getConfiguredOrigins();
   if (!origin) return allowed[0] ?? 'http://localhost:5173';
-  if (isAllowedOrigin(origin, host, allowed)) return origin;
+  if (isAllowedOrigin(origin, requestOrigin, allowed)) return origin;
   return allowed[0] ?? 'http://localhost:5173';
 }

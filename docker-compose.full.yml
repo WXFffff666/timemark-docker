@@ -1,6 +1,6 @@
 # TimeMark 公网服务器部署
-# 默认账号: admin / TimeMark@2026（登录后请修改密码）
-# 公网部署建议自定义密钥（可选，不设置也能用）
+# 首次启动前请在 .env 中设置唯一强密码 DEFAULT_ADMIN_PASSWORD。
+# 公网部署必须启用 HTTPS，并为反向代理配置 TRUSTED_PROXIES。
 
 services:
   app:
@@ -11,6 +11,9 @@ services:
       - "3000:3000"
     environment:
       TZ: Asia/Shanghai
+      DEFAULT_ADMIN_PASSWORD: "${DEFAULT_ADMIN_PASSWORD:?Set a unique DEFAULT_ADMIN_PASSWORD in your .env file}"
+      ALLOW_INSECURE_HTTP: "${ALLOW_INSECURE_HTTP:-false}"
+      TRUSTED_PROXIES: "${TRUSTED_PROXIES:-}"
       # 公网部署建议设置（可选）
       # JWT_SECRET: 你的自定义JWT密钥
       # MASTER_KEY: 你的自定义加密密钥

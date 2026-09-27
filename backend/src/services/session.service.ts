@@ -6,6 +6,7 @@ export async function createSession(userId: string, deviceFingerprint: string, i
   const { generateAccessToken, generateRefreshToken } = await import('../utils/jwt.js');
   
   const token = randomUUID();
+  const refreshTokenId = randomUUID();
   const expiresIn = rememberMe ? 30 * 24 * 60 * 60 * 1000 : 8 * 60 * 60 * 1000;
   const expiresAt = new Date(Date.now() + expiresIn).toISOString();
 
@@ -16,13 +17,13 @@ export async function createSession(userId: string, deviceFingerprint: string, i
   }
 
   const result = await query(
-    'INSERT INTO sessions (user_id, token, device_fingerprint, is_trusted, expires_at) VALUES ($1, $2, $3, $4, $5) RETURNING id',
-    [numericUserId, token, deviceFingerprint, isTrusted ? 1 : 0, expiresAt]
+    'INSERT INTO sessions (user_id, token, device_fingerprint, is_trusted, expires_at, refresh_token_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+    [numericUserId, token, deviceFingerprint, isTrusted ? 1 : 0, expiresAt, refreshTokenId]
   );
 
   const id = result.rows[0].id;
   const accessToken = await generateAccessToken(userId, token, rememberMe);
-  const refreshToken = await generateRefreshToken(userId, token);
+  const refreshToken = await generateRefreshToken(userId, token, refreshTokenId);
 
   return {
     session: { id, userId, token, deviceFingerprint, isTrusted, expiresAt },
@@ -33,12 +34,25 @@ export async function createSession(userId: string, deviceFingerprint: string, i
 
 export async function getSessionByToken(token: string): Promise<Session | null> {
   const result = await query(
-    "SELECT * FROM sessions WHERE token = $1 AND expires_at > datetime('now')", 
+    "SELECT * FROM sessions WHERE token = $1 AND julianday(expires_at) > julianday('now')",
     [token]
   );
   if (result.rows.length === 0) return null;
   const row = result.rows[0] as any;
   return { id: row.id, userId: row.user_id, token: row.token, deviceFingerprint: row.device_fingerprint, isTrusted: row.is_trusted, expiresAt: row.expires_at };
+}
+
+export async function rotateSessionRefreshToken(
+  sessionToken: string,
+  currentRefreshTokenId: string,
+  nextRefreshTokenId: string,
+): Promise<boolean> {
+  const result = await query(
+    `UPDATE sessions SET refresh_token_id = $1
+     WHERE token = $2 AND refresh_token_id = $3 AND julianday(expires_at) > julianday('now')`,
+    [nextRefreshTokenId, sessionToken, currentRefreshTokenId],
+  );
+  return result.rowCount === 1;
 }
 
 export async function deleteSession(token: string): Promise<void> {

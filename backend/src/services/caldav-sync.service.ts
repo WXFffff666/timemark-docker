@@ -1,7 +1,7 @@
-import axios from 'axios';
 import { query } from '../db/index.js';
 import { createLogger } from '../utils/logger.js';
-import { isSafePublicUrl } from '../utils/url-safety.js';
+import { safeAxiosGet } from '../utils/safe-http.js';
+import { parseIcsEvents } from '../utils/ics-parser.js';
 import { decrypt } from '@timemark/shared/crypto';
 
 const log = createLogger('caldav-sync');
@@ -32,19 +32,21 @@ export async function syncAllCalDavSubscriptions(): Promise<{ synced: number }> 
   for (const row of users.rows as Array<Record<string, unknown>>) {
     try {
       const url = String(row.caldav_url);
-      const safe = await isSafePublicUrl(url);
-      if (!safe.safe) continue;
       const username = String(row.caldav_username || '');
+      const targetUrl = new URL(url);
+      if (targetUrl.protocol === 'http:' && (username || targetUrl.username || targetUrl.password)) {
+        log.warn({ userId: row.user_id }, 'Skipping HTTP CalDAV URL configured with credentials');
+        continue;
+      }
       const password = decryptCalDavPassword(String(row.caldav_password_encrypted || ''));
       if (row.caldav_password_encrypted && !password) continue;
-      const res = await axios.get(url, {
+      const res = await safeAxiosGet<string>(url, {
         auth: username ? { username, password } : undefined,
         timeout: 15000,
-        maxRedirects: 0,
         headers: { Accept: 'text/calendar' },
         validateStatus: (s) => s < 500,
       });
-      if (res.status >= 400) continue;
+      if (res.status < 200 || res.status >= 300) continue;
       const body = String(res.data || '');
       const events = parseIcsEvents(body);
       const userId = row.user_id as number;
@@ -62,21 +64,8 @@ export async function syncAllCalDavSubscriptions(): Promise<{ synced: number }> 
         synced++;
       }
     } catch (err) {
-      log.warn({ userId: row.user_id, err }, 'CalDAV sync failed');
+      log.warn({ userId: row.user_id }, 'CalDAV sync failed');
     }
   }
   return { synced };
-}
-
-function parseIcsEvents(ics: string): Array<{ name: string; date: string }> {
-  const events: Array<{ name: string; date: string }> = [];
-  const blocks = ics.split('BEGIN:VEVENT');
-  for (const block of blocks.slice(1)) {
-    const summary = block.match(/SUMMARY:([^\r\n]+)/)?.[1]?.replace(/\\n/g, ' ').trim();
-    const dtstart = block.match(/DTSTART[^:]*:(\d{8})/)?.[1];
-    if (!summary || !dtstart) continue;
-    const date = `${dtstart.slice(0, 4)}-${dtstart.slice(4, 6)}-${dtstart.slice(6, 8)}`;
-    events.push({ name: summary, date });
-  }
-  return events;
 }

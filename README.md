@@ -69,7 +69,7 @@ v2.0 是一次彻底的架构重构，从三容器方案精简为单容器部署
 ### v2.x 核心改进
 
 - **架构精简**：去掉 PostgreSQL 和 Redis 依赖，SQLite 内置数据库，单容器即可运行
-- **即开即用**：零配置启动，所有环境变量均有内置默认值，`docker compose up -d` 即可运行
+- **快速部署**：单容器启动；首次启动需显式设置管理员密码，生产环境使用 HTTPS
 - **安全加固**：登录失败锁定 + 安全告警 + 登录日志 + 通知凭证 AES-256 加密 + CSRF 保护
 - **性能优化**：内存占用降低 70%，启动速度提升，适合 J4125 等低功耗 NAS 处理器
 - **多账户通知**：所有通知渠道（含邮箱）统一通过账户管理，支持同渠道多账户多选
@@ -120,7 +120,7 @@ v2.0 是一次彻底的架构重构，从三容器方案精简为单容器部署
 
 > 💡 **推荐 Docker Hub**，无需任何认证即可拉取。
 
-### 一键部署
+### 快速部署
 
 ```bash
 # 1. 创建目录
@@ -129,18 +129,22 @@ mkdir timemark && cd timemark
 # 2. 下载配置
 curl -sSL https://raw.githubusercontent.com/WXFffff666/timemark-docker/master/docker-compose.dockerhub.yml -o docker-compose.yml
 
-# 3. 启动（就这么简单，不需要改任何配置）
+# 3. 首次部署必须设置唯一管理员密码。此示例显式启用 HTTP，仅限可信局域网体验。
+printf 'DEFAULT_ADMIN_PASSWORD=%s\nALLOW_INSECURE_HTTP=true\n' "$(openssl rand -hex 32)" > .env
+chmod 600 .env
+
+# 4. 启动
 docker compose up -d
 ```
 
-部署完成！访问 `http://服务器IP:3000`
+部署完成！局域网体验访问 `http://服务器IP:3000`。公网部署必须使用 HTTPS 反向代理，且不要设置 `ALLOW_INSECURE_HTTP=true`。
 
 | 项目 | 值 |
 |:----:|:--:|
-| 默认用户名 | `admin` |
-| 默认密码 | `TimeMark@2026` |
+| 初始用户名 | `admin`（可通过 `DEFAULT_ADMIN_USERNAME` 修改） |
+| 初始密码 | 首次启动前设置在 `.env` 的 `DEFAULT_ADMIN_PASSWORD`；无内置默认值 |
 
-> ⚠️ **首次登录后请立即修改密码！** 进入设置页面即可修改。
+> ⚠️ `.env` 含管理员凭据，不要提交到 Git 或公开分享。
 
 ### 配置文件说明
 
@@ -159,7 +163,7 @@ docker compose up -d
 ```
 ┌─────────────────────────────────────────────────┐
 │                TimeMark v2.16.0                  │
-│            单容器 · 零依赖 · 开箱即用             │
+│       单容器 · 零依赖 · 首次启动需设置管理员密码       │
 ├─────────────────────────────────────────────────┤
 │                                                  │
 │   ┌───────────┐       ┌────────────────────┐    │
@@ -381,17 +385,17 @@ TimeMark 支持 38+ 通知渠道，覆盖国内外主流通讯平台。所有渠
 
 | 项目 | 说明 |
 |:----:|------|
-| 访问地址 | `http://服务器IP:3000` |
-| 用户名 | `admin`（默认） |
-| 密码 | `TimeMark@2026`（默认） |
+| 访问地址 | 生产环境使用 HTTPS；HTTP 仅在显式设置 `ALLOW_INSECURE_HTTP=true` 的可信局域网中使用 |
+| 用户名 | `admin`（可通过 `DEFAULT_ADMIN_USERNAME` 修改） |
+| 密码 | 首次启动前配置的 `DEFAULT_ADMIN_PASSWORD`，无内置默认值 |
 
-> ⚠️ **首次登录后请立即修改密码！** 进入设置页面即可修改。
+> ⚠️ 保管好 `.env` 中的密码；不要把该文件提交到 Git。
 
 ---
 
 ## ⚙️ 环境变量
 
-> ✅ **所有环境变量均为可选，不设置也能正常使用。** 系统内置默认值，`docker compose up -d` 即可启动。
+> 首次创建管理员必须设置 `DEFAULT_ADMIN_PASSWORD`。生产环境默认拒绝 HTTP；局域网 HTTP 需显式设置 `ALLOW_INSECURE_HTTP=true`。
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
@@ -400,11 +404,13 @@ TimeMark 支持 38+ 通知渠道，覆盖国内外主流通讯平台。所有渠
 | `NODE_ENV` | `production` | 运行环境 |
 | `JWT_SECRET` | 首次启动自动生成 | JWT 签名密钥，自动保存到 `data/.env` |
 | `MASTER_KEY` | 首次启动自动生成 | 主密钥（通知凭证 AES 加密），自动保存到 `data/.env` |
-| `CORS_ORIGIN` | 无（默认同 Host 放行） | 允许的前端源；**生产公网必填**自定义域名，逗号分隔 |
+| `CORS_ORIGIN` | 无（默认 localhost + 同 scheme/host/port 放行） | 允许的前端源，仅支持精确来源；**生产公网必填**自定义域名，逗号分隔 |
 | `TURNSTILE_SITE_KEY` | 无 | Cloudflare Turnstile 站点密钥（可选，可公开） |
 | `TURNSTILE_SECRET_KEY` | 无 | Turnstile 服务端密钥，**仅 Production 需要** |
 | `DEFAULT_ADMIN_USERNAME` | `admin` | 初始管理员用户名 |
-| `DEFAULT_ADMIN_PASSWORD` | `TimeMark@2026` | 初始管理员密码 |
+| `DEFAULT_ADMIN_PASSWORD` | 无；空数据库首次启动必填 | 初始管理员密码；不会使用或打印内置默认值 |
+| `ALLOW_INSECURE_HTTP` | `false` | 仅可信局域网显式启用明文 HTTP；公网必须保持 `false` |
+| `TRUSTED_PROXIES` | 无 | 逗号分隔的可信反向代理 IP/CIDR；仅这些代理的转发头会被采信 |
 | `LOG_QUERIES` | `false` | 是否打印 SQL 查询日志（调试用） |
 
 > 🔐 **生产提示**：`CORS_ORIGIN` / `TURNSTILE_SECRET_KEY` 等敏感变量**仅 Production 需要配置**（Docker 单环境部署按生产原则即可；参考 vercel 仅 Production 勾选，避免泄露到预览）。FNOS 权限问题：v2.16 修复后容器入口会在 root 运行时自动修复挂载目录属主并降权到 app 用户；如仍遇权限问题，可取消 `docker-compose.yml` 中 `user: "0:0"` 注释以 root 运行（见 DEPLOYMENT.md FNOS 排查）。
@@ -442,7 +448,7 @@ TimeMark v2.16.0 内置多层安全防护：
 | **发信白名单** | 快捷发信 `recipientEmails` 必须属于联系人邮箱列表，禁止任意中继 |
 | **单用户模式** | 固定个人单账户，禁止创建第二用户；会话令牌后台自动续期 |
 
-安全评估详见 `docs/SECURITY_AUDIT.md`（同步 vercel v2.16.0）。
+安全评估详见 `docs/SECURITY_AUDIT.md`（同步 vercel v2.16.0）；本次修复与复测结果见 [安全修复补充说明](docs/SECURITY_AUDIT_REMEDIATION.md)。
 
 ---
 

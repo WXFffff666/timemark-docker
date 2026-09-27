@@ -2,79 +2,48 @@ import type { ApiResponse } from '@timemark/shared';
 
 const API_BASE = import.meta.env.DEV ? 'http://localhost:3000/api' : '/api';
 
-const getTokens = () => ({
-  accessToken: localStorage.getItem('accessToken') || sessionStorage.getItem('accessToken'),
-  refreshToken: localStorage.getItem('refreshToken') || sessionStorage.getItem('refreshToken'),
-  sessionId: localStorage.getItem('timemark_session_id'),
-});
-
-const setAccessToken = (token: string) => {
-  const { sessionId } = getTokens();
-  if (sessionId) {
-    localStorage.setItem('accessToken', token);
-  } else {
-    sessionStorage.setItem('accessToken', token);
-  }
-};
-
-async function refreshAccessToken(refreshToken: string): Promise<string | null> {
+async function refreshSession(): Promise<boolean> {
   try {
     const response = await fetch(`${API_BASE}/auth/refresh`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refreshToken }),
+      credentials: 'include',
     });
 
-    if (!response.ok) return null;
+    if (!response.ok) return false;
 
-    const data: ApiResponse<{ accessToken: string }> = await response.json();
-    if (!data.success) return null;
+    const data: ApiResponse<unknown> = await response.json();
+    return data.success;
 
-    return data.data.accessToken;
   } catch {
-    return null;
+    return false;
   }
 }
 
-let isRefreshing = false;
-let refreshPromise: Promise<string | null> | null = null;
+let refreshPromise: Promise<boolean> | null = null;
 
 async function request<T>(url: string, options?: RequestInit, retryAfterRefresh = false): Promise<T> {
-  const { accessToken, refreshToken, sessionId } = getTokens();
-
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
-    ...(accessToken && { Authorization: `Bearer ${accessToken}` }),
     ...options?.headers,
   };
 
-  const response = await fetch(`${API_BASE}${url}`, { ...options, headers });
+  const response = await fetch(`${API_BASE}${url}`, {
+    ...options,
+    headers,
+    credentials: 'include',
+  });
 
-  // If 401 and not already retried, try to refresh token
-  if (response.status === 401 && !retryAfterRefresh && refreshToken) {
-    // Prevent multiple simultaneous refresh attempts
-    if (!isRefreshing) {
-      isRefreshing = true;
-      refreshPromise = refreshAccessToken(refreshToken);
-    }
+  // Refresh once through the HttpOnly cookie, then retry the original request.
+  const skipRefresh = url === '/auth/login' || url === '/auth/refresh';
+  if (response.status === 401 && !retryAfterRefresh && !skipRefresh) {
+    const pendingRefresh = refreshPromise ?? (refreshPromise = refreshSession());
+    const refreshed = await pendingRefresh;
+    if (refreshPromise === pendingRefresh) refreshPromise = null;
 
-    const newAccessToken = await refreshPromise;
-    isRefreshing = false;
-
-    if (newAccessToken) {
-      // Store new token and retry
-      setAccessToken(newAccessToken);
+    if (refreshed) {
       return request<T>(url, options, true);
     }
-
-    // Refresh failed, clear tokens
-    localStorage.removeItem('accessToken');
-    localStorage.removeItem('refreshToken');
-    sessionStorage.removeItem('accessToken');
-    sessionStorage.removeItem('refreshToken');
-    localStorage.removeItem('timemark_session_id');
-
-    throw new Error('HTTP 401: Token expired and refresh failed');
   }
 
   if (!response.ok) {

@@ -1,5 +1,6 @@
 # TimeMark 一键部署（飞牛OS / NAS）
-# 默认账号: admin / TimeMark@2026（登录后请修改密码）
+# 首次启动前请在 .env 中设置唯一强密码 DEFAULT_ADMIN_PASSWORD。
+# 明文 HTTP 默认禁用；仅可信局域网可显式设置 ALLOW_INSECURE_HTTP=true。
 
 services:
   app:
@@ -12,8 +13,11 @@ services:
       - "3000:3000"
     environment:
       TZ: Asia/Shanghai
+      DEFAULT_ADMIN_PASSWORD: "${DEFAULT_ADMIN_PASSWORD:?Set a unique DEFAULT_ADMIN_PASSWORD in your .env file}"
+      ALLOW_INSECURE_HTTP: "${ALLOW_INSECURE_HTTP:-false}"
+      TRUSTED_PROXIES: "${TRUSTED_PROXIES:-}"
       # LAN IP 登录 403 时（旧版镜像），可临时加： CORS_ORIGIN=http://192.168.x.x:3808
-      # 新版已支持同 Host 自动放行，无需手动设置 CORS_ORIGIN
+      # 新版已支持 Origin 与请求 scheme/host/port 完全一致时自动放行，无需手动设置 CORS_ORIGIN
     dns:
       - 223.5.5.5
       - 8.8.8.8

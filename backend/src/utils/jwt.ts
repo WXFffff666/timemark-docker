@@ -10,6 +10,8 @@ export function isSecureSecret(): boolean {
 export interface TokenPayload {
   userId: string;
   sessionToken?: string;
+  tokenUse: 'access' | 'refresh';
+  refreshTokenId?: string;
 }
 
 function resolveSecret(secret?: string): string {
@@ -24,21 +26,26 @@ function resolveSecret(secret?: string): string {
 
 export async function generateAccessToken(userId: string, sessionToken?: string, rememberMe: boolean = false, secret?: string): Promise<string> {
   const expiresIn = rememberMe ? 60 * 60 : 15 * 60;
-  const payload: Record<string, unknown> = { userId, exp: Math.floor(Date.now() / 1000) + expiresIn };
+  const payload: Record<string, unknown> = { userId, tokenUse: 'access', exp: Math.floor(Date.now() / 1000) + expiresIn };
   if (sessionToken) payload.sessionToken = sessionToken;
   return sign(payload, resolveSecret(secret));
 }
 
-export async function generateRefreshToken(userId: string, sessionToken?: string, secret?: string): Promise<string> {
-  const payload: Record<string, unknown> = { userId, exp: Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60 };
-  if (sessionToken) payload.sessionToken = sessionToken;
+export async function generateRefreshToken(userId: string, sessionToken: string, refreshTokenId: string, secret?: string): Promise<string> {
+  const payload: Record<string, unknown> = { userId, sessionToken, tokenUse: 'refresh', refreshTokenId, exp: Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60 };
   return sign(payload, resolveSecret(secret));
 }
 
 export async function verifyToken(token: string, secret?: string): Promise<TokenPayload | null> {
   try {
     const payload = await verify(token, resolveSecret(secret), 'HS256');
-    return { userId: payload.userId as string, sessionToken: payload.sessionToken as string | undefined };
+    const tokenUse = payload.tokenUse;
+    const userId = payload.userId;
+    const sessionToken = typeof payload.sessionToken === 'string' ? payload.sessionToken : undefined;
+    const refreshTokenId = typeof payload.refreshTokenId === 'string' ? payload.refreshTokenId : undefined;
+    if ((tokenUse !== 'access' && tokenUse !== 'refresh') || typeof userId !== 'string' || !userId) return null;
+    if (tokenUse === 'refresh' && (!sessionToken || !refreshTokenId)) return null;
+    return { userId, sessionToken, tokenUse, refreshTokenId };
   } catch {
     return null;
   }

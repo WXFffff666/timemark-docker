@@ -1,4 +1,5 @@
 import type { Context, Next } from 'hono';
+import { getClientIp } from '../utils/client-ip.js';
 
 interface RateLimitEntry {
   count: number;
@@ -18,14 +19,6 @@ const cleanupTimer = setInterval(() => {
 }, 5 * 60 * 1000);
 cleanupTimer.unref();
 
-function getClientIP(c: Context): string {
-  return (
-    c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ||
-    c.req.header('x-real-ip') ||
-    c.req.header('cf-connecting-ip') ||
-    '127.0.0.1'
-  );
-}
 
 /**
  * Sliding window rate limiter middleware for Hono.
@@ -34,7 +27,7 @@ function getClientIP(c: Context): string {
  */
 export function rateLimit(maxRequests: number, windowMs: number) {
   return async (c: Context, next: Next) => {
-    const ip = getClientIP(c);
+    const ip = getClientIp(c);
     const key = `${ip}:${c.req.path}`;
     const now = Date.now();
 

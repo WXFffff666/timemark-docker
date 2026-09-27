@@ -1,13 +1,12 @@
 import type { Context, Next } from 'hono';
 import { getConfiguredOrigins, isAllowedOrigin } from '../utils/allowed-origins.js';
+import { getRequestOrigin } from '../utils/client-ip.js';
 
 /**
  * CSRF 保护中间件
  *
- * 对于使用 JWT 认证的 SPA 应用，CSRF 风险较低（token 在 localStorage），
- * 但仍验证 Origin/Referer。
- * 修复 #4：LAN IP:端口 无需手动 CORS_ORIGIN 即可登录 — 允许 Origin 与 Host 同源时通过
- *（即使 CORS_ORIGIN 未配置），与 vercel 版 originMatchesHost 逻辑一致。
+ * HttpOnly Cookie 认证会自动携带凭据，存在 CSRF 风险，因此仍验证 Origin/Referer。
+ * LAN 访问无需手动配置 CORS_ORIGIN；只允许 Origin 与实际请求 scheme、host、port 完全一致时通过。
  *
  * 保护范围：
  * - POST, PUT, DELETE, PATCH
@@ -30,7 +29,7 @@ export function csrfProtection() {
 
     const origin = c.req.header('Origin');
     const referer = c.req.header('Referer');
-    const host = c.req.header('host') ?? c.req.header('x-forwarded-host');
+    const appOrigin = getRequestOrigin(c);
 
     let requestOrigin = origin;
     if (!requestOrigin && referer) {
@@ -51,8 +50,8 @@ export function csrfProtection() {
       return c.json({ success: false, error: 'Missing origin or authorization' }, 403);
     }
 
-    if (!isAllowedOrigin(requestOrigin, host, allowedOrigins)) {
-      console.warn(`[CSRF] Blocked request from origin: ${requestOrigin} host: ${host}`);
+    if (!isAllowedOrigin(requestOrigin, appOrigin, allowedOrigins)) {
+      console.warn(`[CSRF] Blocked request from origin: ${requestOrigin} appOrigin: ${appOrigin}`);
       return c.json({ success: false, error: 'Origin not allowed' }, 403);
     }
 

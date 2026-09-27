@@ -336,13 +336,11 @@ export default function Contacts() {
     setError('');
     try {
       const text = await file.text();
-      const token = localStorage.getItem('accessToken') || sessionStorage.getItem('accessToken');
       const res = await fetch('/api/contacts/import-vcard', {
         method: 'POST',
         credentials: 'include',
         headers: {
           'Content-Type': 'text/vcard',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: text,
       });

@@ -17,6 +17,7 @@ export async function authMiddleware(c: Context<{ Variables: { user: User } }>, 
   let token = authHeader?.replace(/^Bearer\s+/i, '').trim() || undefined;
   if (token === '') token = undefined;
   let payload = token ? await verifyToken(token) : null;
+  if (payload?.tokenUse !== 'access') payload = null;
 
   // Bearer 无效或缺失时，回退 HttpOnly Cookie
   if (!payload) {
@@ -24,6 +25,7 @@ export async function authMiddleware(c: Context<{ Variables: { user: User } }>, 
     if (cookieToken) {
       token = cookieToken;
       payload = await verifyToken(cookieToken);
+      if (payload?.tokenUse !== 'access') payload = null;
     }
   }
 

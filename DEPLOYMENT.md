@@ -66,13 +66,13 @@
 | 磁盘 | 1GB | 5GB |
 | Docker | 20.10+ | 24.0+ |
 
-### 密钥管理：自动生成（开箱即用）
+### 密钥管理：应用密钥自动生成，管理员密码需显式设置
 
 系统首次启动时会**自动生成随机密钥**并保存到 `data/.env` 文件，无需手动配置：
 
 | 项目 | 说明 |
 |------|------|
-| 默认管理员 | `admin` / `TimeMark@2026`，首次登录后请修改密码 |
+| 初始管理员 | 用户名默认为 `admin`；空数据库首次启动前必须设置唯一的 `DEFAULT_ADMIN_PASSWORD` |
 | JWT_SECRET | 首次启动自动生成，保存在 `data/.env` |
 | MASTER_KEY | 首次启动自动生成，保存在 `data/.env` |
 
@@ -81,6 +81,8 @@
 > - 生成的密钥会保存到 `data/.env` 文件中，后续启动会自动读取
 > - 如需自定义密钥，可直接设置环境变量或修改 `data/.env` 文件
 > - ⚠️ 更换 `MASTER_KEY` 后，已加密的通知渠道凭证需要重新配置
+
+> **所有 Docker Compose 部署均需先设置 `DEFAULT_ADMIN_PASSWORD`。** 本地/NAS 直连 HTTP 默认被拒绝；仅可信局域网可在 `.env` 显式添加 `ALLOW_INSECURE_HTTP=true`。公网部署必须保持它为 `false`，使用 HTTPS 反向代理，并将 `TRUSTED_PROXIES` 配为代理实际 peer 的 IP/CIDR。代理必须覆盖而不是盲目追加客户端传入的 `X-Forwarded-For`、`X-Forwarded-Proto`、`X-Forwarded-Host` 等头。
 
 ### 配置文件总览
 
@@ -135,19 +137,24 @@ mkdir timemark && cd timemark
 # 2. 下载配置文件（Docker Hub 源，推荐）
 curl -sSL https://raw.githubusercontent.com/WXFffff666/timemark-docker/master/docker-compose.dockerhub.yml -o docker-compose.yml
 
-# 3. 可选：自定义密钥（公网部署建议配置）
+# 3. 创建首次启动凭据（随机强密码保存在本地 .env；勿提交到 Git）
+printf 'DEFAULT_ADMIN_PASSWORD=%s\nALLOW_INSECURE_HTTP=true\n' "$(openssl rand -hex 32)" > .env
+chmod 600 .env
+# 上面的 HTTP 例外仅用于可信局域网体验；公网部署必须使用 HTTPS，并删除 ALLOW_INSECURE_HTTP=true。
+
+# 4. 可选：自定义密钥（公网部署建议配置）
 # echo "JWT_SECRET: $(openssl rand -hex 32)"
 # echo "MASTER_KEY: $(openssl rand -hex 32)"
 # vim docker-compose.yml
 
-# 4. 启动服务（无需修改任何配置，即开即用！）
+# 5. 启动服务
 docker compose up -d
 
 # 5. 查看日志确认启动成功
 docker compose logs -f
 ```
 
-> ✅ **即开即用**：无需配置密钥，默认账号 `admin` / `TimeMark@2026`
+> 首次启动必须提供 `DEFAULT_ADMIN_PASSWORD`。HTTP 例外只适用于可信局域网；公网部署须通过 HTTPS 反向代理。
 
 ### 方式二：复制粘贴部署
 
@@ -168,9 +175,14 @@ services:
       TZ: Asia/Shanghai
       # 运行环境
       NODE_ENV: production
-      # 默认管理员（可选，可自定义或登录后修改密码）
+      # 初始管理员用户名
       DEFAULT_ADMIN_USERNAME: admin
-      # DEFAULT_ADMIN_PASSWORD: TimeMark@2026  # 可选：自定义密码
+      # 首次启动必填：在部署环境/Stack variables 中设置唯一强密码
+      DEFAULT_ADMIN_PASSWORD: ${DEFAULT_ADMIN_PASSWORD:?Set a unique DEFAULT_ADMIN_PASSWORD}
+      # 默认拒绝明文 HTTP；只在隔离局域网显式设为 true
+      ALLOW_INSECURE_HTTP: "false"
+      # 反向代理场景填代理实际 peer IP/CIDR；不要设为全网段
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
       # JWT 密钥（可选：公网部署建议自定义）
       # JWT_SECRET: <自定义密钥>
       # 主密钥（可选：公网部署建议自定义）
@@ -188,7 +200,7 @@ networks:
     driver: bridge
 ```
 
-> ✅ **即开即用**：直接运行 `docker compose up -d`，默认账号 `admin` / `TimeMark@2026`，登录后请修改密码！
+> 启动前必须在 `.env` 或部署环境中设置 `DEFAULT_ADMIN_PASSWORD`；生产部署还必须使用 HTTPS。
 
 ---
 
@@ -204,8 +216,10 @@ networks:
 2. 进入 **Compose** 功能
 3. 点击 **新建 Compose**
 4. 将上方「复制粘贴部署」的配置内容粘贴进去
-5. **可选修改**：
-   - 如需自定义密码，取消注释 `DEFAULT_ADMIN_PASSWORD` 行并设置密码
+5. **必填配置**：
+   - 设置唯一强密码 `DEFAULT_ADMIN_PASSWORD`；请勿使用示例或提交到 Git
+   - 局域网直连 HTTP 时才显式设 `ALLOW_INSECURE_HTTP=true`；公网必须保持 `false`
+   - 使用反向代理时设置 `TRUSTED_PROXIES` 为代理的实际 IP/CIDR
    - 如需自定义密钥，取消注释 `JWT_SECRET` 和 `MASTER_KEY` 行
    - 如需修改端口，将 `"3000:3000"` 改为 `"你的端口:3000"`
 6. 点击 **部署**
@@ -222,12 +236,16 @@ mkdir -p /vol1/docker/timemark && cd /vol1/docker/timemark
 # 3. 下载配置文件
 curl -sSL https://raw.githubusercontent.com/WXFffff666/timemark-docker/master/docker-compose.dockerhub.yml -o docker-compose.yml
 
-# 4. 可选：生成自定义密钥（公网部署建议配置）
+# 4. 生成首次管理员密码；此 NAS 示例仅供可信局域网 HTTP 使用
+printf 'DEFAULT_ADMIN_PASSWORD=%s\nALLOW_INSECURE_HTTP=true\n' "$(openssl rand -hex 32)" > .env
+chmod 600 .env
+
+# 5. 可选：生成自定义密钥（公网部署建议配置）
 # openssl rand -hex 32  # JWT_SECRET
 # openssl rand -hex 32  # MASTER_KEY
 # vim docker-compose.yml
 
-# 5. 启动（无需修改配置，即开即用！）
+# 6. 启动
 docker compose up -d
 ```
 
@@ -242,7 +260,7 @@ docker compose up -d
 | 现象 | 原因 | 解决 |
 |------|------|------|
 | `EACCES /app/data` / `SQLite readonly` / 容器反复重启 | FNOS 1.1.3107+ 宿主机卷以 root 创建，容器内 `app` 用户无写权限 | 方案A：升级到已含 `chmod 777 /app/data` 的最新镜像（`docker compose pull && docker compose up -d`）；方案B：`docker-compose.yml` 取消注释 `user: "0:0"` 以 root 运行（仅注释可选，不强制所有用户） |
-| 局域网 `http://192.168.x.x:3808` 登录 403 `Origin not allowed` | 旧镜像 CSRF 仅校验 `CORS_ORIGIN`，未允许同 Host | 新版镜像已支持 `Origin` 与 `Host` 同源自动放行（`originMatchesHost`，与 vercel 逻辑一致），无需设置 `CORS_ORIGIN`；旧版可临时加 `CORS_ORIGIN=http://192.168.x.x:3808` |
+| 局域网 `http://192.168.x.x:3808` 登录 403 `Origin not allowed` | 旧镜像 CSRF 仅校验 `CORS_ORIGIN`，未允许同 Host | 新版镜像对与实际请求 scheme/host/port 完全一致的 `Origin` 自动放行，无需设置 `CORS_ORIGIN`；旧版可临时加 `CORS_ORIGIN=http://192.168.x.x:3808` |
 
 > 说明：`Dockerfile` 已改为 `mkdir -p /app/data && chown -R app:app /app && chmod -R 777 /app/data`，默认仍以 `USER app` 运行，仅在宿主机卷属主异常时 `777` 兜底；`user: "0:0"` 为可选注释，适合 FNOS 等 NAS 临时提权。
 
@@ -277,13 +295,17 @@ sudo mkdir -p /volume1/docker/timemark/data
 cd /volume1/docker/timemark
 sudo curl -sSL https://raw.githubusercontent.com/WXFffff666/timemark-docker/master/docker-compose.dockerhub.yml -o docker-compose.yml
 
-# 4. 可选：生成自定义密钥（公网部署建议配置）
+# 4. 生成首次管理员密码；此 NAS 示例仅供可信局域网 HTTP 使用
+printf 'DEFAULT_ADMIN_PASSWORD=%s\nALLOW_INSECURE_HTTP=true\n' "$(openssl rand -hex 32)" > .env
+chmod 600 .env
+
+# 5. 可选：生成自定义密钥（公网部署建议配置）
 # sudo openssl rand -hex 32  # JWT_SECRET
 # sudo openssl rand -hex 32  # MASTER_KEY
 # sudo vim docker-compose.yml
 # 修改数据卷路径为：/volume1/docker/timemark/data:/app/data
 
-# 5. 部署（无需修改配置，即开即用！）
+# 6. 部署
 sudo docker compose up -d
 ```
 
@@ -323,13 +345,17 @@ cd /share/Container/timemark
 # 3. 下载配置
 curl -sSL https://raw.githubusercontent.com/WXFffff666/timemark-docker/master/docker-compose.dockerhub.yml -o docker-compose.yml
 
-# 4. 可选：生成自定义密钥（公网部署建议配置）
+# 4. 生成首次管理员密码；此 NAS 示例仅供可信局域网 HTTP 使用
+printf 'DEFAULT_ADMIN_PASSWORD=%s\nALLOW_INSECURE_HTTP=true\n' "$(openssl rand -hex 32)" > .env
+chmod 600 .env
+
+# 5. 可选：生成自定义密钥（公网部署建议配置）
 # openssl rand -hex 32  # JWT_SECRET
 # openssl rand -hex 32  # MASTER_KEY
 # vim docker-compose.yml
 # 修改数据卷路径为：/share/Container/timemark/data:/app/data
 
-# 5. 部署（无需修改配置，即开即用！）
+# 6. 部署
 docker compose up -d
 ```
 
@@ -368,13 +394,17 @@ cd /Volume1/docker/timemark
 # 3. 下载配置
 curl -sSL https://raw.githubusercontent.com/WXFffff666/timemark-docker/master/docker-compose.dockerhub.yml -o docker-compose.yml
 
-# 4. 可选：生成自定义密钥（公网部署建议配置）
+# 4. 生成首次管理员密码；此 NAS 示例仅供可信局域网 HTTP 使用
+printf 'DEFAULT_ADMIN_PASSWORD=%s\nALLOW_INSECURE_HTTP=true\n' "$(openssl rand -hex 32)" > .env
+chmod 600 .env
+
+# 5. 可选：生成自定义密钥（公网部署建议配置）
 # openssl rand -hex 32  # JWT_SECRET
 # openssl rand -hex 32  # MASTER_KEY
 # vim docker-compose.yml
 # 修改数据卷路径为：/Volume1/docker/timemark/data:/app/data
 
-# 5. 部署（无需修改配置，即开即用！）
+# 6. 部署
 docker compose up -d
 ```
 
@@ -405,10 +435,12 @@ mkdir timemark; cd timemark
 # 2. 下载配置文件
 Invoke-WebRequest -Uri "https://raw.githubusercontent.com/WXFffff666/timemark-docker/master/docker-compose.dockerhub.yml" -OutFile "docker-compose.yml"
 
-# 3. 可选：用记事本编辑配置（自定义密码/密钥）
-# notepad docker-compose.yml
+# 3. 生成首次管理员密码；此示例仅供本机/可信局域网 HTTP 体验。
+$password = [guid]::NewGuid().ToString('N') + [guid]::NewGuid().ToString('N')
+"DEFAULT_ADMIN_PASSWORD=$password`nALLOW_INSECURE_HTTP=true" | Set-Content -Encoding ascii .env
+# .env 已被 Git 忽略。公网部署不要启用 ALLOW_INSECURE_HTTP，必须使用 HTTPS。
 
-# 4. 启动（无需修改，即开即用！）
+# 4. 启动（生产部署必须在 HTTPS 反向代理后）
 docker compose up -d
 ```
 
@@ -421,16 +453,19 @@ mkdir timemark && cd timemark
 # 2. 下载配置文件
 curl -sSL https://raw.githubusercontent.com/WXFffff666/timemark-docker/master/docker-compose.dockerhub.yml -o docker-compose.yml
 
-# 3. 可选：生成自定义密钥（公网部署建议配置）
+# 3. 生成首次管理员密码；本机 HTTP 例外仅用于可信局域网体验。
+printf 'DEFAULT_ADMIN_PASSWORD=%s\nALLOW_INSECURE_HTTP=true\n' "$(openssl rand -hex 32)" > .env
+chmod 600 .env
+# 公网部署不要启用 ALLOW_INSECURE_HTTP，必须使用 HTTPS 并配置 TRUSTED_PROXIES。
 # openssl rand -hex 32  # JWT_SECRET
 # openssl rand -hex 32  # MASTER_KEY
 # nano docker-compose.yml
 
-# 4. 启动（无需修改，即开即用！）
+# 4. 启动
 docker compose up -d
 ```
 
-部署完成后访问 `http://localhost:3000`，默认账号 `admin` / `TimeMark@2026`。
+局域网 HTTP 体验需在 `.env` 显式设置 `ALLOW_INSECURE_HTTP=true` 后访问 `http://localhost:3000`；否则使用 HTTPS 反向代理。初始用户名默认为 `admin`，密码由 `DEFAULT_ADMIN_PASSWORD` 设置。
 
 ---
 
@@ -498,20 +533,22 @@ server {
 }
 ```
 
+在应用环境中将 `TRUSTED_PROXIES` 设置为 TimeMark 实际看到的 Nginx peer IP/CIDR；不要信任 `0.0.0.0/0` 或 `::/0`。未配置为可信代理的请求所带转发头会被忽略。
+
 #### 公网部署安全建议
 
 - **必须启用 HTTPS**，避免密码和 Token 明文传输
 - **修改默认端口**，不要直接暴露 3000 端口
 - **配置防火墙**，仅开放必要端口
 - **自定义密钥**，公网部署建议自定义 `JWT_SECRET` 和 `MASTER_KEY`
-- **修改默认密码**，首次登录后立即修改
+- **首次启动设置强密码**，将 `DEFAULT_ADMIN_PASSWORD` 保存在未提交的 `.env` 中
 - **定期备份**，设置自动备份任务
 
 ---
 
 ## ⚙️ 环境变量说明
 
-> ✅ **所有环境变量均为可选，不设置也能正常使用。** 系统内置默认值，`docker compose up -d` 即可启动。
+> 空数据库首次启动必须设置 `DEFAULT_ADMIN_PASSWORD`。HTTPS 默认启用；明文 HTTP 仅可通过 `ALLOW_INSECURE_HTTP=true` 显式用于可信局域网。
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
@@ -521,13 +558,15 @@ server {
 | `JWT_SECRET` | 内置默认值 | JWT 签名密钥，公网部署建议自定义 |
 | `MASTER_KEY` | 内置默认值 | 主密钥（通知凭证 AES 加密），公网部署建议自定义 |
 | `DEFAULT_ADMIN_USERNAME` | `admin` | 初始管理员用户名 |
-| `DEFAULT_ADMIN_PASSWORD` | `TimeMark@2026` | 初始管理员密码 |
+| `DEFAULT_ADMIN_PASSWORD` | 无；空数据库首次启动必填 | 初始管理员密码；不提供内置默认值 |
+| `ALLOW_INSECURE_HTTP` | `false` | 是否显式允许明文 HTTP；公网部署必须保持 `false` |
+| `TRUSTED_PROXIES` | 无 | 逗号分隔的可信反向代理 IP/CIDR；仅其转发头会被信任 |
 | `LOG_QUERIES` | `false` | 是否打印 SQL 查询日志（调试用） |
-| `CORS_ORIGIN` | 无（默认 localhost + 同 Host 自动放行） | 允许的前端源，逗号分隔，如 `https://app.example.com`；**生产公网必填自定义域名** |
+| `CORS_ORIGIN` | 无（默认 localhost + 同 Host 自动放行） | 允许的前端源，逗号分隔，如 `https://app.example.com`；只支持精确来源，拒绝通配符；**生产公网必填自定义域名** |
 | `TURNSTILE_SITE_KEY` | 无 | Cloudflare Turnstile 站点密钥（可选，可公开） |
 | `TURNSTILE_SECRET_KEY` | 无 | Turnstile 服务端密钥，**仅 Production 需要**（勿提交到 Git） |
 | `WEBAUTHN_RP_ID` | 无 | Passkey RP ID，与正式域名一致 |
-| `WEBAUTHN_ORIGIN` | 无 | Passkey Origin，如 `https://timemark.example.com` |
+| `WEBAUTHN_ORIGIN` | 无 | 固定 Passkey Origin，如 `https://timemark.example.com`；设置后优先于请求的 Origin/Referer |
 
 > 💡 **公网部署建议**：自定义 `JWT_SECRET` 和 `MASTER_KEY` 以增强安全性。更换 MASTER_KEY 后，已加密的通知渠道凭证需要重新配置。
 > 🔐 **生产安全**：`CORS_ORIGIN` / `TURNSTILE_SECRET_KEY` 等敏感变量**仅 Production 需配置**（Docker 部署无需区分 Preview，但公网勿暴露默认密钥；参考 vercel 仅 Production 勾选原则）。
@@ -585,11 +624,11 @@ environment:
 
 | 项目 | 说明 |
 |:----:|------|
-| 访问地址 | `http://服务器IP:3000` |
-| 用户名 | `admin`（默认）或自定义 |
-| 密码 | `TimeMark@2026`（默认）或自定义 |
+| 访问地址 | 生产环境使用 HTTPS；HTTP 仅限显式 opt-in 的可信局域网 |
+| 用户名 | `admin`（默认）或通过 `DEFAULT_ADMIN_USERNAME` 自定义 |
+| 密码 | 空数据库首次启动前设置的 `DEFAULT_ADMIN_PASSWORD` |
 
-> ⚠️ **首次登录后请立即修改密码！** 进入设置页面即可修改。
+> ⚠️ 保管 `.env` 中的管理员密码，不要提交到 Git。
 
 ### 首次登录后建议操作
 

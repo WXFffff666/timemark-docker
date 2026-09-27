@@ -55,7 +55,7 @@ export function Dashboard() {
       if (format === 'ics') {
         // Download ICS file
         const response = await fetch('/api/calendar/export.ics', {
-          headers: { 'Authorization': `Bearer ${localStorage.getItem('accessToken') || sessionStorage.getItem('accessToken')}` }
+          credentials: 'include',
         });
         const blob = await response.blob();
         const url = window.URL.createObjectURL(blob);
@@ -67,7 +67,7 @@ export function Dashboard() {
       } else if (format === 'google') {
         // Open Google Calendar links
         const response = await fetch('/api/calendar/google', {
-          headers: { 'Authorization': `Bearer ${localStorage.getItem('accessToken') || sessionStorage.getItem('accessToken')}` }
+          credentials: 'include',
         });
         const data = await response.json();
         if (data.success && data.data?.length > 0) {
@@ -78,7 +78,7 @@ export function Dashboard() {
       } else if (format === 'apple') {
         // Subscribe to Apple Calendar
         const response = await fetch('/api/calendar/apple', {
-          headers: { 'Authorization': `Bearer ${localStorage.getItem('accessToken') || sessionStorage.getItem('accessToken')}` }
+          credentials: 'include',
         });
         const data = await response.json();
         if (data.success) {

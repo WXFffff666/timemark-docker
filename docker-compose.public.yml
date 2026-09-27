@@ -1,7 +1,9 @@
 # TimeMark 快速体验
+# 首次启动前请在 .env 中设置唯一强密码 DEFAULT_ADMIN_PASSWORD。
+# 本地 HTTP 体验还需显式设置 ALLOW_INSECURE_HTTP=true；仅限可信局域网。
+# 生产部署必须使用 HTTPS 反向代理，并配置 TRUSTED_PROXIES。
 # docker compose -f docker-compose.public.yml up -d
-# 访问: http://localhost:3000
-# 账号: admin / TimeMark@2026
+# 访问: http://localhost:3000（仅在已显式允许局域网 HTTP 时）
 
 services:
   app:
@@ -12,6 +14,9 @@ services:
       - "3000:3000"
     environment:
       TZ: Asia/Shanghai
+      DEFAULT_ADMIN_PASSWORD: "${DEFAULT_ADMIN_PASSWORD:?Set a unique DEFAULT_ADMIN_PASSWORD in your .env file}"
+      ALLOW_INSECURE_HTTP: "${ALLOW_INSECURE_HTTP:-false}"
+      TRUSTED_PROXIES: "${TRUSTED_PROXIES:-}"
     dns:
       - 223.5.5.5
       - 8.8.8.8

@@ -555,6 +555,11 @@ ALTER TABLE fixed_contacts ADD COLUMN gender TEXT DEFAULT 'unknown';`
         }
       },
     },
+    {
+      version: 33,
+      name: 'session_refresh_token_rotation_v33',
+      sql: `ALTER TABLE sessions ADD COLUMN refresh_token_id TEXT;`,
+    },
   ];
 
   for (const migration of migrations) {

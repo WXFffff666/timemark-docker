@@ -4,6 +4,28 @@ import { query } from '../db/index.js';
 import { createEvent } from '../services/event.service.js';
 import type { User } from '@timemark/shared';
 import { parseIcsEvents } from '../utils/ics-parser.js';
+import { getRequestOrigin } from '../utils/client-ip.js';
+
+type CalendarFeedToken = { name?: string; token: string };
+
+function parseStoredJsonArray(value: unknown): unknown[] | null {
+  if (Array.isArray(value)) return value;
+  if (value === null || value === undefined) return [];
+  if (typeof value !== 'string') return null;
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function isCalendarFeedToken(value: unknown): value is CalendarFeedToken {
+  return typeof value === 'object'
+    && value !== null
+    && !Array.isArray(value)
+    && typeof (value as { token?: unknown }).token === 'string';
+}
 
 const calendarImport = new Hono<{ Variables: { user: User } }>();
 calendarImport.use('*', authMiddleware);
@@ -54,14 +76,14 @@ calendarImport.get('/webcal-url', async (c) => {
     [Number(user.id)],
   );
   const token = row.rows[0]?.calendar_feed_token as string | undefined;
-  const host = c.req.header('Host') || 'localhost';
-  const protocol = c.req.header('X-Forwarded-Proto') || 'https';
+  const origin = getRequestOrigin(c);
+  const host = new URL(origin).host;
   const feedPath = token ? `/api/calendar/feed/${token}.ics` : '/api/calendar/export.ics';
   return c.json({
     success: true,
     data: {
       webcalUrl: `webcal://${host}${feedPath}`,
-      httpsUrl: `${protocol}://${host}${feedPath}`,
+      httpsUrl: `${origin}${feedPath}`,
       usesToken: !!token,
     },
   });
@@ -76,23 +98,23 @@ calendarImport.get('/integrations', async (c) => {
     [Number(user.id)],
   );
   const r = row.rows[0] || {};
-  const host = c.req.header('Host') || 'localhost';
-  const protocol = c.req.header('X-Forwarded-Proto') || 'https';
+  const origin = getRequestOrigin(c);
   const webhookToken = r.webhook_inbound_token as string | undefined;
   const feedToken = r.calendar_feed_token as string | undefined;
-  const feedTokens = Array.isArray(r.calendar_feed_tokens) ? r.calendar_feed_tokens : [];
+  const feedTokens = (parseStoredJsonArray(r.calendar_feed_tokens) ?? []).filter(isCalendarFeedToken);
   const inboxToken = r.inbox_receive_token as string | undefined;
   return c.json({
     success: true,
     data: {
-      webhookUrl: webhookToken ? `${protocol}://${host}/api/webhook/receive/${webhookToken}` : null,
-      inboxReceiveUrl: inboxToken ? `${protocol}://${host}/api/inbox/receive/${inboxToken}` : null,
-      calendarFeedUrl: feedToken ? `${protocol}://${host}/api/calendar/feed/${feedToken}.ics` : null,
+      webhookUrl: webhookToken ? `${origin}/api/webhook/receive/${webhookToken}` : null,
+      inboxReceiveUrl: inboxToken ? `${origin}/api/inbox/receive/${inboxToken}` : null,
+      calendarFeedUrl: feedToken ? `${origin}/api/calendar/feed/${feedToken}.ics` : null,
       calendarFeedTokens: feedTokens.map((t: { name?: string; token: string }) => ({
         name: t.name || '默认',
-        url: `${protocol}://${host}/api/calendar/feed/${t.token}.ics`,
+        url: `${origin}/api/calendar/feed/${t.token}.ics`,
       })),
-      externalCalendarUrls: Array.isArray(r.external_calendar_urls) ? r.external_calendar_urls : [],
+      externalCalendarUrls: (parseStoredJsonArray(r.external_calendar_urls) ?? [])
+        .filter((url): url is string => typeof url === 'string'),
       externalCalendarSyncStrategy: r.external_calendar_sync_strategy || 'add_only',
     },
   });
@@ -104,23 +126,31 @@ calendarImport.post('/feed-tokens', async (c) => {
   const { randomBytes } = await import('crypto');
   const token = randomBytes(24).toString('hex');
   const row = await query('SELECT calendar_feed_tokens FROM user_configs WHERE user_id = $1', [Number(user.id)]);
-  const existing = Array.isArray(row.rows[0]?.calendar_feed_tokens) ? row.rows[0].calendar_feed_tokens : [];
+  const parsedExisting = parseStoredJsonArray(row.rows[0]?.calendar_feed_tokens);
+  if (parsedExisting === null || parsedExisting.some((entry) => !isCalendarFeedToken(entry))) {
+    return c.json({ success: false, error: '保存的日历订阅配置无效，未作更改' }, 500);
+  }
+  const existing = parsedExisting as CalendarFeedToken[];
   const updated = [...existing, { name: String(name || `Feed ${existing.length + 1}`), token }].slice(0, 10);
   await query(
     `UPDATE user_configs SET calendar_feed_tokens = $1 WHERE user_id = $2`,
     [JSON.stringify(updated), Number(user.id)],
   );
-  const host = c.req.header('Host') || 'localhost';
-  const protocol = c.req.header('X-Forwarded-Proto') || 'https';
-  return c.json({ success: true, data: { token, url: `${protocol}://${host}/api/calendar/feed/${token}.ics` } });
+  const origin = getRequestOrigin(c);
+  return c.json({ success: true, data: { token, url: `${origin}/api/calendar/feed/${token}.ics` } });
 });
 
 calendarImport.post('/integrations', async (c) => {
   const user = c.get('user');
   const body = await c.req.json().catch(() => ({}));
   const urls = Array.isArray(body.externalCalendarUrls)
-    ? body.externalCalendarUrls.map((u: unknown) => String(u).trim()).filter(Boolean).slice(0, 5)
+    ? body.externalCalendarUrls
+      .map((url: unknown) => typeof url === 'string' ? url.trim() : '')
+      .filter(Boolean)
     : undefined;
+  if (urls && urls.length > 5) {
+    return c.json({ success: false, error: '最多允许配置 5 个外部日历源' }, 400);
+  }
   const strategy = body.externalCalendarSyncStrategy === 'replace' ? 'replace' : 'add_only';
   if (urls) {
     await query(
